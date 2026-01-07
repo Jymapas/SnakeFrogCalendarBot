@@ -34,7 +34,7 @@ public sealed class Birthday
             throw new DomainException("Month must be between 1 and 12.");
         }
 
-        if (birthYear is <= 0)
+        if (birthYear.HasValue && birthYear.Value <= 0)
         {
             throw new DomainException("Birth year must be a positive number.");
         }
