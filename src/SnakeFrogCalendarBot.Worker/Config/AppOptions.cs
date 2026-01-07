@@ -17,7 +17,11 @@ public sealed class AppOptions
         var allowedIdsRaw = configuration["TELEGRAM_ALLOWED_USER_IDS"];
         var targetChat = configuration["TELEGRAM_TARGET_CHAT"]?.Trim();
         var timeZone = configuration["TZ"]?.Trim();
-        var connectionString = configuration["POSTGRES_CONNECTION_STRING"]?.Trim();
+        var dbHost = configuration["POSTGRES_HOST"]?.Trim();
+        var dbPortRaw = configuration["POSTGRES_PORT"]?.Trim();
+        var dbName = configuration["POSTGRES_DB"]?.Trim();
+        var dbUser = configuration["POSTGRES_USER"]?.Trim();
+        var dbPassword = configuration["POSTGRES_PASSWORD"]?.Trim();
 
         if (string.IsNullOrWhiteSpace(token))
         {
@@ -57,10 +61,35 @@ public sealed class AppOptions
             throw new InvalidOperationException("TZ is required.");
         }
 
-        if (string.IsNullOrWhiteSpace(connectionString))
+        if (string.IsNullOrWhiteSpace(dbHost))
         {
-            throw new InvalidOperationException("POSTGRES_CONNECTION_STRING is required.");
+            throw new InvalidOperationException("POSTGRES_HOST is required.");
         }
+
+        if (string.IsNullOrWhiteSpace(dbName))
+        {
+            throw new InvalidOperationException("POSTGRES_DB is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(dbUser))
+        {
+            throw new InvalidOperationException("POSTGRES_USER is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(dbPassword))
+        {
+            throw new InvalidOperationException("POSTGRES_PASSWORD is required.");
+        }
+
+        var port = 5432;
+        if (!string.IsNullOrWhiteSpace(dbPortRaw)
+            && !int.TryParse(dbPortRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out port))
+        {
+            throw new InvalidOperationException("POSTGRES_PORT must be a valid number.");
+        }
+
+        var connectionString =
+            $"Host={dbHost};Port={port};Database={dbName};Username={dbUser};Password={dbPassword}";
 
         return new AppOptions
         {
