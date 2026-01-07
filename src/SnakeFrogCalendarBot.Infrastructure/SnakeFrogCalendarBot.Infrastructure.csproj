@@ -6,4 +6,9 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\SnakeFrogCalendarBot.Application\SnakeFrogCalendarBot.Application.csproj" />
+    <ProjectReference Include="..\SnakeFrogCalendarBot.Domain\SnakeFrogCalendarBot.Domain.csproj" />
+  </ItemGroup>
+
 </Project>

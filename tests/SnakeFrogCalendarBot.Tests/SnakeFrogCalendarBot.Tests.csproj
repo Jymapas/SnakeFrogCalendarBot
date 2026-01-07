@@ -20,4 +20,11 @@
         <Using Include="NUnit.Framework"/>
     </ItemGroup>
 
+    <ItemGroup>
+        <ProjectReference Include="..\..\src\SnakeFrogCalendarBot.Application\SnakeFrogCalendarBot.Application.csproj" />
+        <ProjectReference Include="..\..\src\SnakeFrogCalendarBot.Domain\SnakeFrogCalendarBot.Domain.csproj" />
+        <ProjectReference Include="..\..\src\SnakeFrogCalendarBot.Infrastructure\SnakeFrogCalendarBot.Infrastructure.csproj" />
+        <ProjectReference Include="..\..\src\SnakeFrogCalendarBot.Worker\SnakeFrogCalendarBot.Worker.csproj" />
+    </ItemGroup>
+
 </Project>

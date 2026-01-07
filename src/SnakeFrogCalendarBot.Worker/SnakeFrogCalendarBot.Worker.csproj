@@ -15,4 +15,9 @@
       </Content>
     </ItemGroup>
 
+    <ItemGroup>
+      <ProjectReference Include="..\SnakeFrogCalendarBot.Application\SnakeFrogCalendarBot.Application.csproj" />
+      <ProjectReference Include="..\SnakeFrogCalendarBot.Infrastructure\SnakeFrogCalendarBot.Infrastructure.csproj" />
+    </ItemGroup>
+
 </Project>
