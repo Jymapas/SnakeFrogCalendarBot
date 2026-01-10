@@ -12,6 +12,7 @@ public sealed class CalendarDbContext : DbContext
 
     public DbSet<Birthday> Birthdays => Set<Birthday>();
     public DbSet<ConversationState> ConversationStates => Set<ConversationState>();
+    public DbSet<Event> Events => Set<Event>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

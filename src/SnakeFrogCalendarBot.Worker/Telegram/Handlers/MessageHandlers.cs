@@ -1,10 +1,13 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using NodaTime;
 using SnakeFrogCalendarBot.Application.Abstractions.Parsing;
 using SnakeFrogCalendarBot.Application.Abstractions.Persistence;
 using SnakeFrogCalendarBot.Application.Abstractions.Time;
 using SnakeFrogCalendarBot.Application.UseCases.Birthdays;
+using SnakeFrogCalendarBot.Application.UseCases.Events;
 using SnakeFrogCalendarBot.Domain.Entities;
+using SnakeFrogCalendarBot.Domain.Enums;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 
@@ -20,22 +23,31 @@ public sealed class MessageHandlers
 
     private readonly ITelegramBotClient _botClient;
     private readonly IConversationStateRepository _conversationRepository;
-    private readonly IBirthdayDateParser _dateParser;
+    private readonly IBirthdayDateParser _birthdayDateParser;
+    private readonly IDateTimeParser _dateTimeParser;
     private readonly CreateBirthday _createBirthday;
+    private readonly CreateEvent _createEvent;
     private readonly IClock _clock;
+    private readonly ITimeZoneProvider _timeZoneProvider;
 
     public MessageHandlers(
         ITelegramBotClient botClient,
         IConversationStateRepository conversationRepository,
-        IBirthdayDateParser dateParser,
+        IBirthdayDateParser birthdayDateParser,
+        IDateTimeParser dateTimeParser,
         CreateBirthday createBirthday,
-        IClock clock)
+        CreateEvent createEvent,
+        IClock clock,
+        ITimeZoneProvider timeZoneProvider)
     {
         _botClient = botClient;
         _conversationRepository = conversationRepository;
-        _dateParser = dateParser;
+        _birthdayDateParser = birthdayDateParser;
+        _dateTimeParser = dateTimeParser;
         _createBirthday = createBirthday;
+        _createEvent = createEvent;
         _clock = clock;
+        _timeZoneProvider = timeZoneProvider;
     }
 
     public async Task HandleAsync(Message message, CancellationToken cancellationToken)
@@ -50,22 +62,27 @@ public sealed class MessageHandlers
         {
             await _botClient.SendTextMessageAsync(
                 message.Chat.Id,
-                "Используйте /birthday_add или /birthday_list",
+                "Используйте /birthday_add, /birthday_list, /event_add или /event_list",
                 cancellationToken: cancellationToken);
             return;
         }
 
-        if (!string.Equals(state.ConversationName, ConversationNames.BirthdayAdd, StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(state.ConversationName, ConversationNames.BirthdayAdd, StringComparison.OrdinalIgnoreCase))
+        {
+            await HandleBirthdayAddAsync(message, state, cancellationToken);
+        }
+        else if (string.Equals(state.ConversationName, ConversationNames.EventAdd, StringComparison.OrdinalIgnoreCase))
+        {
+            await HandleEventAddAsync(message, state, cancellationToken);
+        }
+        else
         {
             await _conversationRepository.DeleteAsync(userId, cancellationToken);
             await _botClient.SendTextMessageAsync(
                 message.Chat.Id,
-                "Состояние диалога сброшено. Начните заново с /birthday_add",
+                "Состояние диалога сброшено. Начните заново",
                 cancellationToken: cancellationToken);
-            return;
         }
-
-        await HandleBirthdayAddAsync(message, state, cancellationToken);
     }
 
     private async Task HandleBirthdayAddAsync(Message message, ConversationState state, CancellationToken cancellationToken)
@@ -91,7 +108,7 @@ public sealed class MessageHandlers
                 break;
 
             case BirthdayConversationSteps.Date:
-                if (!_dateParser.TryParseMonthDay(text, out var day, out var month))
+                if (!_birthdayDateParser.TryParseMonthDay(text, out var day, out var month))
                 {
                     await _botClient.SendTextMessageAsync(
                         message.Chat.Id,
@@ -200,6 +217,285 @@ public sealed class MessageHandlers
     }
 
     private static string SerializeData(BirthdayConversationData data)
+    {
+        return JsonSerializer.Serialize(data, JsonOptions);
+    }
+
+    private async Task HandleEventAddAsync(Message message, ConversationState state, CancellationToken cancellationToken)
+    {
+        var text = message.Text?.Trim();
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return;
+        }
+
+        var data = DeserializeEventData(state.StateJson);
+        var now = _clock.UtcNow;
+
+        switch (state.Step)
+        {
+            case EventConversationSteps.Title:
+                data.Title = text;
+                await UpdateEventStateAsync(state, EventConversationSteps.Date, data, now, cancellationToken);
+                await _botClient.SendTextMessageAsync(
+                    message.Chat.Id,
+                    "Введите дату (например, 7 января 2026 или 2026-01-07)",
+                    cancellationToken: cancellationToken);
+                break;
+
+            case EventConversationSteps.Date:
+                if (!_dateTimeParser.TryParse(text, out var parseResult) || parseResult is null)
+                {
+                    await _botClient.SendTextMessageAsync(
+                        message.Chat.Id,
+                        "Не удалось распознать дату. Формат: 7 января 2026 или 2026-01-07",
+                        cancellationToken: cancellationToken);
+                    return;
+                }
+
+                data.Year = parseResult.Year;
+                data.Month = parseResult.Month;
+                data.Day = parseResult.Day;
+                data.Hour = parseResult.Hour;
+                data.Minute = parseResult.Minute;
+                data.HasYear = parseResult.HasYear;
+
+                if (parseResult.Hour.HasValue && parseResult.Minute.HasValue)
+                {
+                    data.IsAllDay = false;
+                    await UpdateEventStateAsync(state, EventConversationSteps.Kind, data, now, cancellationToken);
+                    await _botClient.SendTextMessageAsync(
+                        message.Chat.Id,
+                        "Выберите тип события: 'разовое' или 'ежегодное'",
+                        cancellationToken: cancellationToken);
+                }
+                else
+                {
+                    await UpdateEventStateAsync(state, EventConversationSteps.AllDay, data, now, cancellationToken);
+                    await _botClient.SendTextMessageAsync(
+                        message.Chat.Id,
+                        "Это событие на весь день? (да/нет)",
+                        cancellationToken: cancellationToken);
+                }
+                break;
+
+            case EventConversationSteps.AllDay:
+                var isAllDay = text.Equals("да", StringComparison.OrdinalIgnoreCase) ||
+                               text.Equals("yes", StringComparison.OrdinalIgnoreCase) ||
+                               text.Equals("y", StringComparison.OrdinalIgnoreCase);
+                data.IsAllDay = isAllDay;
+
+                if (!isAllDay)
+                {
+                    await UpdateEventStateAsync(state, EventConversationSteps.Time, data, now, cancellationToken);
+                    await _botClient.SendTextMessageAsync(
+                        message.Chat.Id,
+                        "Введите время (HH:mm)",
+                        cancellationToken: cancellationToken);
+                }
+                else
+                {
+                    await UpdateEventStateAsync(state, EventConversationSteps.Kind, data, now, cancellationToken);
+                    await _botClient.SendTextMessageAsync(
+                        message.Chat.Id,
+                        "Выберите тип события: 'разовое' или 'ежегодное'",
+                        cancellationToken: cancellationToken);
+                }
+                break;
+
+            case EventConversationSteps.Time:
+                if (!_dateTimeParser.TryParse(text, out var timeResult) || timeResult is null ||
+                    !timeResult.Hour.HasValue || !timeResult.Minute.HasValue)
+                {
+                    await _botClient.SendTextMessageAsync(
+                        message.Chat.Id,
+                        "Не удалось распознать время. Формат: HH:mm",
+                        cancellationToken: cancellationToken);
+                    return;
+                }
+
+                data.Hour = timeResult.Hour;
+                data.Minute = timeResult.Minute;
+                await UpdateEventStateAsync(state, EventConversationSteps.Kind, data, now, cancellationToken);
+                await _botClient.SendTextMessageAsync(
+                    message.Chat.Id,
+                    "Выберите тип события: 'разовое' или 'ежегодное'",
+                    cancellationToken: cancellationToken);
+                break;
+
+            case EventConversationSteps.Kind:
+                var kindText = text.ToLowerInvariant();
+                if (kindText.Contains("разов") || kindText.Contains("one"))
+                {
+                    data.Kind = "OneOff";
+                }
+                else if (kindText.Contains("ежегод") || kindText.Contains("yearly"))
+                {
+                    data.Kind = "Yearly";
+                }
+                else
+                {
+                    await _botClient.SendTextMessageAsync(
+                        message.Chat.Id,
+                        "Введите 'разовое' или 'ежегодное'",
+                        cancellationToken: cancellationToken);
+                    return;
+                }
+
+                await UpdateEventStateAsync(state, EventConversationSteps.Description, data, now, cancellationToken);
+                await _botClient.SendTextMessageAsync(
+                    message.Chat.Id,
+                    "Введите описание или 'пропустить'",
+                    cancellationToken: cancellationToken);
+                break;
+
+            case EventConversationSteps.Description:
+                data.Description = IsSkip(text) ? null : text;
+                await UpdateEventStateAsync(state, EventConversationSteps.Place, data, now, cancellationToken);
+                await _botClient.SendTextMessageAsync(
+                    message.Chat.Id,
+                    "Введите место или 'пропустить'",
+                    cancellationToken: cancellationToken);
+                break;
+
+            case EventConversationSteps.Place:
+                data.Place = IsSkip(text) ? null : text;
+                await UpdateEventStateAsync(state, EventConversationSteps.Link, data, now, cancellationToken);
+                await _botClient.SendTextMessageAsync(
+                    message.Chat.Id,
+                    "Введите ссылку или 'пропустить'",
+                    cancellationToken: cancellationToken);
+                break;
+
+            case EventConversationSteps.Link:
+                data.Link = IsSkip(text) ? null : text;
+                await SaveEventAsync(message, data, cancellationToken);
+                break;
+
+            default:
+                await _conversationRepository.DeleteAsync(state.UserId, cancellationToken);
+                await _botClient.SendTextMessageAsync(
+                    message.Chat.Id,
+                    "Состояние диалога сброшено. Начните заново с /event_add",
+                    cancellationToken: cancellationToken);
+                break;
+        }
+    }
+
+    private async Task SaveEventAsync(Message message, EventConversationData data, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(data.Title) || data.Month is null || data.Day is null || data.Kind is null)
+        {
+            await _conversationRepository.DeleteAsync(message.From!.Id, cancellationToken);
+            await _botClient.SendTextMessageAsync(
+                message.Chat.Id,
+                "Не удалось сохранить событие. Начните заново с /event_add",
+                cancellationToken: cancellationToken);
+            return;
+        }
+
+        var timeZone = DateTimeZoneProviders.Tzdb[_timeZoneProvider.GetTimeZoneId()];
+        var now = _clock.UtcNow;
+        var nowInZone = Instant.FromDateTimeUtc(now).InZone(timeZone);
+
+        CreateEventCommand command;
+
+        if (data.Kind == "OneOff")
+        {
+            if (data.Year is null || data.Month is null || data.Day is null)
+            {
+                await _conversationRepository.DeleteAsync(message.From!.Id, cancellationToken);
+                await _botClient.SendTextMessageAsync(
+                    message.Chat.Id,
+                    "Не удалось сохранить событие. Начните заново с /event_add",
+                    cancellationToken: cancellationToken);
+                return;
+            }
+
+            var localDate = new LocalDate(data.Year.Value, data.Month.Value, data.Day.Value);
+            LocalDateTime localDateTime;
+
+            if (data.IsAllDay == true)
+            {
+                localDateTime = localDate.AtMidnight();
+            }
+            else
+            {
+                var time = data.Hour.HasValue && data.Minute.HasValue
+                    ? new LocalTime(data.Hour.Value, data.Minute.Value)
+                    : LocalTime.Midnight;
+                localDateTime = localDate.At(time);
+            }
+
+            var zonedDateTime = localDateTime.InZoneLeniently(timeZone);
+            var instant = zonedDateTime.ToInstant();
+            var occursAtUtc = instant.ToDateTimeOffset();
+
+            command = new CreateEventCommand(
+                data.Title,
+                EventKind.OneOff,
+                data.IsAllDay == true,
+                occursAtUtc,
+                null,
+                null,
+                null,
+                data.Description,
+                data.Place,
+                data.Link);
+        }
+        else
+        {
+            TimeSpan? timeOfDay = null;
+            if (!data.IsAllDay && data.Hour.HasValue && data.Minute.HasValue)
+            {
+                timeOfDay = new TimeSpan(data.Hour.Value, data.Minute.Value, 0);
+            }
+
+            command = new CreateEventCommand(
+                data.Title,
+                EventKind.Yearly,
+                data.IsAllDay == true,
+                null,
+                data.Month,
+                data.Day,
+                timeOfDay,
+                data.Description,
+                data.Place,
+                data.Link);
+        }
+
+        await _createEvent.ExecuteAsync(command, cancellationToken);
+        await _conversationRepository.DeleteAsync(message.From!.Id, cancellationToken);
+
+        await _botClient.SendTextMessageAsync(
+            message.Chat.Id,
+            "Событие сохранено",
+            cancellationToken: cancellationToken);
+    }
+
+    private async Task UpdateEventStateAsync(
+        ConversationState state,
+        string nextStep,
+        EventConversationData data,
+        DateTime now,
+        CancellationToken cancellationToken)
+    {
+        state.Update(nextStep, SerializeEventData(data), now);
+        await _conversationRepository.UpsertAsync(state, cancellationToken);
+    }
+
+    private static EventConversationData DeserializeEventData(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return new EventConversationData();
+        }
+
+        return JsonSerializer.Deserialize<EventConversationData>(json, JsonOptions)
+            ?? new EventConversationData();
+    }
+
+    private static string SerializeEventData(EventConversationData data)
     {
         return JsonSerializer.Serialize(data, JsonOptions);
     }
