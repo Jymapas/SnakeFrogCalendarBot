@@ -6,6 +6,9 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 ARG BUILD_CONFIGURATION=Release
 WORKDIR /src
 COPY ["src/SnakeFrogCalendarBot.Worker/SnakeFrogCalendarBot.Worker.csproj", "src/SnakeFrogCalendarBot.Worker/"]
+COPY ["src/SnakeFrogCalendarBot.Application/SnakeFrogCalendarBot.Application.csproj", "src/SnakeFrogCalendarBot.Application/"]
+COPY ["src/SnakeFrogCalendarBot.Infrastructure/SnakeFrogCalendarBot.Infrastructure.csproj", "src/SnakeFrogCalendarBot.Infrastructure/"]
+COPY ["src/SnakeFrogCalendarBot.Domain/SnakeFrogCalendarBot.Domain.csproj", "src/SnakeFrogCalendarBot.Domain/"]
 RUN dotnet restore "src/SnakeFrogCalendarBot.Worker/SnakeFrogCalendarBot.Worker.csproj"
 COPY . .
 WORKDIR "/src/src/SnakeFrogCalendarBot.Worker"
