@@ -17,7 +17,7 @@ public sealed class EventListFormatter
         _timeZoneProvider = timeZoneProvider;
     }
 
-    public string Format(IReadOnlyList<Event> events)
+    public string Format(IReadOnlyList<Event> events, IReadOnlyDictionary<int, bool> eventHasAttachment)
     {
         if (events.Count == 0)
         {
@@ -64,6 +64,11 @@ public sealed class EventListFormatter
 
             builder.Append(" — ");
             builder.Append(eventEntity.Title);
+
+            if (eventHasAttachment.TryGetValue(eventEntity.Id, out var hasAttachment) && hasAttachment)
+            {
+                builder.Append(" 📎");
+            }
 
             if (eventEntity.Kind == EventKind.Yearly)
             {
