@@ -26,6 +26,8 @@ public sealed class CommandHandlers
     private readonly BuildMonthlyDigest _buildMonthlyDigest;
     private readonly DigestFormatter _digestFormatter;
     private readonly SendDigest _sendDigest;
+    private readonly IEventRepository _eventRepository;
+    private readonly IBirthdayRepository _birthdayRepository;
 
     public CommandHandlers(
         ITelegramBotClient botClient,
@@ -40,7 +42,9 @@ public sealed class CommandHandlers
         BuildWeeklyDigest buildWeeklyDigest,
         BuildMonthlyDigest buildMonthlyDigest,
         DigestFormatter digestFormatter,
-        SendDigest sendDigest)
+        SendDigest sendDigest,
+        IEventRepository eventRepository,
+        IBirthdayRepository birthdayRepository)
     {
         _botClient = botClient;
         _conversationRepository = conversationRepository;
@@ -55,6 +59,8 @@ public sealed class CommandHandlers
         _buildMonthlyDigest = buildMonthlyDigest;
         _digestFormatter = digestFormatter;
         _sendDigest = sendDigest;
+        _eventRepository = eventRepository;
+        _birthdayRepository = birthdayRepository;
     }
 
     public async Task HandleAsync(Message message, CancellationToken cancellationToken)
@@ -85,6 +91,18 @@ public sealed class CommandHandlers
             case "/event_list":
                 await SendEventListAsync(message, cancellationToken);
                 break;
+            case "/event_edit":
+                await SendEventListForEditAsync(message, cancellationToken);
+                break;
+            case "/event_delete":
+                await SendEventListForDeleteAsync(message, cancellationToken);
+                break;
+            case "/birthday_edit":
+                await SendBirthdayListForEditAsync(message, cancellationToken);
+                break;
+            case "/birthday_delete":
+                await SendBirthdayListForDeleteAsync(message, cancellationToken);
+                break;
             case "/cancel":
                 await CancelConversationAsync(message, cancellationToken);
                 break;
@@ -94,7 +112,7 @@ public sealed class CommandHandlers
             default:
                 await _botClient.SendTextMessageAsync(
                     message.Chat.Id,
-                    "Неизвестная команда. Доступные: /birthday_add, /birthday_list, /event_add, /event_list, /cancel, /digest_test",
+                    "Неизвестная команда. Доступные: /birthday_add, /birthday_list, /birthday_edit, /birthday_delete, /event_add, /event_list, /event_edit, /event_delete, /cancel, /digest_test",
                     cancellationToken: cancellationToken);
                 break;
         }
@@ -131,6 +149,58 @@ public sealed class CommandHandlers
         await _botClient.SendTextMessageAsync(
             message.Chat.Id,
             text,
+            cancellationToken: cancellationToken);
+    }
+
+    private async Task SendBirthdayListForEditAsync(Message message, CancellationToken cancellationToken)
+    {
+        var birthdays = await _listBirthdays.ExecuteAsync(cancellationToken);
+        var text = "Выберите день рождения для редактирования:";
+        var buttons = new List<List<InlineKeyboardButton>>();
+
+        foreach (var birthday in birthdays)
+        {
+            buttons.Add(new List<InlineKeyboardButton>
+            {
+                InlineKeyboardButton.WithCallbackData($"✏️ {birthday.PersonName}", $"birthday_edit:{birthday.Id}")
+            });
+        }
+
+        if (buttons.Count == 0)
+        {
+            text = "Дней рождения пока нет";
+        }
+
+        await _botClient.SendTextMessageAsync(
+            message.Chat.Id,
+            text,
+            replyMarkup: buttons.Count > 0 ? new InlineKeyboardMarkup(buttons) : null,
+            cancellationToken: cancellationToken);
+    }
+
+    private async Task SendBirthdayListForDeleteAsync(Message message, CancellationToken cancellationToken)
+    {
+        var birthdays = await _listBirthdays.ExecuteAsync(cancellationToken);
+        var text = "Выберите день рождения для удаления:";
+        var buttons = new List<List<InlineKeyboardButton>>();
+
+        foreach (var birthday in birthdays)
+        {
+            buttons.Add(new List<InlineKeyboardButton>
+            {
+                InlineKeyboardButton.WithCallbackData($"🗑 {birthday.PersonName}", $"birthday_delete:{birthday.Id}")
+            });
+        }
+
+        if (buttons.Count == 0)
+        {
+            text = "Дней рождения пока нет";
+        }
+
+        await _botClient.SendTextMessageAsync(
+            message.Chat.Id,
+            text,
+            replyMarkup: buttons.Count > 0 ? new InlineKeyboardMarkup(buttons) : null,
             cancellationToken: cancellationToken);
     }
 
@@ -205,6 +275,58 @@ public sealed class CommandHandlers
         return new InlineKeyboardMarkup(buttons);
     }
 
+    private async Task SendEventListForEditAsync(Message message, CancellationToken cancellationToken)
+    {
+        var events = await _eventRepository.ListAllAsync(cancellationToken);
+        var text = "Выберите событие для редактирования:";
+        var buttons = new List<List<InlineKeyboardButton>>();
+
+        foreach (var eventEntity in events)
+        {
+            buttons.Add(new List<InlineKeyboardButton>
+            {
+                InlineKeyboardButton.WithCallbackData($"✏️ {eventEntity.Title}", $"event_edit:{eventEntity.Id}")
+            });
+        }
+
+        if (buttons.Count == 0)
+        {
+            text = "Событий пока нет";
+        }
+
+        await _botClient.SendTextMessageAsync(
+            message.Chat.Id,
+            text,
+            replyMarkup: buttons.Count > 0 ? new InlineKeyboardMarkup(buttons) : null,
+            cancellationToken: cancellationToken);
+    }
+
+    private async Task SendEventListForDeleteAsync(Message message, CancellationToken cancellationToken)
+    {
+        var events = await _eventRepository.ListAllAsync(cancellationToken);
+        var text = "Выберите событие для удаления:";
+        var buttons = new List<List<InlineKeyboardButton>>();
+
+        foreach (var eventEntity in events)
+        {
+            buttons.Add(new List<InlineKeyboardButton>
+            {
+                InlineKeyboardButton.WithCallbackData($"🗑 {eventEntity.Title}", $"event_delete:{eventEntity.Id}")
+            });
+        }
+
+        if (buttons.Count == 0)
+        {
+            text = "Событий пока нет";
+        }
+
+        await _botClient.SendTextMessageAsync(
+            message.Chat.Id,
+            text,
+            replyMarkup: buttons.Count > 0 ? new InlineKeyboardMarkup(buttons) : null,
+            cancellationToken: cancellationToken);
+    }
+
     private async Task CancelConversationAsync(Message message, CancellationToken cancellationToken)
     {
         var userId = message.From?.Id;
@@ -216,7 +338,7 @@ public sealed class CommandHandlers
         await _conversationRepository.DeleteAsync(userId.Value, cancellationToken);
         await _botClient.SendTextMessageAsync(
             message.Chat.Id,
-            "Диалог отменён",
+            "Действие отменено",
             cancellationToken: cancellationToken);
     }
 
