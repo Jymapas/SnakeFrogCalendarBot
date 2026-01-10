@@ -27,6 +27,7 @@ public sealed class MessageHandlers
     private readonly IDateTimeParser _dateTimeParser;
     private readonly CreateBirthday _createBirthday;
     private readonly CreateEvent _createEvent;
+    private readonly AttachFileToEvent _attachFileToEvent;
     private readonly IClock _clock;
     private readonly ITimeZoneProvider _timeZoneProvider;
 
@@ -37,6 +38,7 @@ public sealed class MessageHandlers
         IDateTimeParser dateTimeParser,
         CreateBirthday createBirthday,
         CreateEvent createEvent,
+        AttachFileToEvent attachFileToEvent,
         IClock clock,
         ITimeZoneProvider timeZoneProvider)
     {
@@ -46,18 +48,38 @@ public sealed class MessageHandlers
         _dateTimeParser = dateTimeParser;
         _createBirthday = createBirthday;
         _createEvent = createEvent;
+        _attachFileToEvent = attachFileToEvent;
         _clock = clock;
         _timeZoneProvider = timeZoneProvider;
     }
 
     public async Task HandleAsync(Message message, CancellationToken cancellationToken)
     {
-        if (message.From?.Id is not { } userId || string.IsNullOrWhiteSpace(message.Text))
+        if (message.From?.Id is not { } userId)
         {
             return;
         }
 
         var state = await _conversationRepository.GetByUserIdAsync(userId, cancellationToken);
+        
+        if (state is not null && string.Equals(state.ConversationName, ConversationNames.WaitingForEventFile, StringComparison.OrdinalIgnoreCase))
+        {
+            await HandleEventFileAsync(message, state, cancellationToken);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(message.Text))
+        {
+            if (state is not null)
+            {
+                await _botClient.SendTextMessageAsync(
+                    message.Chat.Id,
+                    "Пожалуйста, отправьте текстовое сообщение",
+                    cancellationToken: cancellationToken);
+            }
+            return;
+        }
+
         if (state is null)
         {
             await _botClient.SendTextMessageAsync(
@@ -81,6 +103,93 @@ public sealed class MessageHandlers
             await _botClient.SendTextMessageAsync(
                 message.Chat.Id,
                 "Состояние диалога сброшено. Начните заново",
+                cancellationToken: cancellationToken);
+        }
+    }
+
+    private async Task HandleEventFileAsync(Message message, ConversationState state, CancellationToken cancellationToken)
+    {
+        if (!int.TryParse(state.Step, out var eventId))
+        {
+            await _conversationRepository.DeleteAsync(state.UserId, cancellationToken);
+            await _botClient.SendTextMessageAsync(
+                message.Chat.Id,
+                "Ошибка: неверный идентификатор события",
+                cancellationToken: cancellationToken);
+            return;
+        }
+
+        string? fileId = null;
+        string? fileUniqueId = null;
+        string? fileName = null;
+        string? mimeType = null;
+        long? size = null;
+
+        if (message.Document is not null)
+        {
+            fileId = message.Document.FileId;
+            fileUniqueId = message.Document.FileUniqueId;
+            fileName = message.Document.FileName;
+            mimeType = message.Document.MimeType;
+            size = message.Document.FileSize;
+        }
+        else if (message.Photo is not null && message.Photo.Length > 0)
+        {
+            var photo = message.Photo[^1];
+            fileId = photo.FileId;
+            fileUniqueId = photo.FileUniqueId;
+            fileName = "photo.jpg";
+            mimeType = "image/jpeg";
+            size = photo.FileSize;
+        }
+        else if (message.Video is not null)
+        {
+            fileId = message.Video.FileId;
+            fileUniqueId = message.Video.FileUniqueId;
+            fileName = message.Video.FileName ?? "video.mp4";
+            mimeType = message.Video.MimeType;
+            size = message.Video.FileSize;
+        }
+        else if (message.Audio is not null)
+        {
+            fileId = message.Audio.FileId;
+            fileUniqueId = message.Audio.FileUniqueId;
+            fileName = message.Audio.FileName ?? "audio.mp3";
+            mimeType = message.Audio.MimeType;
+            size = message.Audio.FileSize;
+        }
+        else
+        {
+            await _botClient.SendTextMessageAsync(
+                message.Chat.Id,
+                "Пожалуйста, отправьте файл",
+                cancellationToken: cancellationToken);
+            return;
+        }
+
+        try
+        {
+            var command = new AttachFileToEventCommand(
+                eventId,
+                fileId,
+                fileUniqueId,
+                fileName ?? "file",
+                mimeType,
+                size);
+
+            await _attachFileToEvent.ExecuteAsync(command, cancellationToken);
+            await _conversationRepository.DeleteAsync(state.UserId, cancellationToken);
+
+            await _botClient.SendTextMessageAsync(
+                message.Chat.Id,
+                "Файл успешно прикреплён",
+                cancellationToken: cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            await _botClient.SendTextMessageAsync(
+                message.Chat.Id,
+                $"Ошибка при прикреплении файла: {ex.Message}",
                 cancellationToken: cancellationToken);
         }
     }
