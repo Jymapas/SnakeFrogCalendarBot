@@ -27,4 +27,28 @@ public sealed class BirthdayRepository : IBirthdayRepository
             .ThenBy(birthday => birthday.Day)
             .ToListAsync(cancellationToken);
     }
+
+    public async Task<Birthday?> GetByIdAsync(int id, CancellationToken cancellationToken)
+    {
+        return await _dbContext.Birthdays
+            .FirstOrDefaultAsync(b => b.Id == id, cancellationToken);
+    }
+
+    public async Task UpdateAsync(Birthday birthday, CancellationToken cancellationToken)
+    {
+        _dbContext.Birthdays.Update(birthday);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task DeleteAsync(int id, CancellationToken cancellationToken)
+    {
+        var birthday = await _dbContext.Birthdays
+            .FirstOrDefaultAsync(b => b.Id == id, cancellationToken);
+
+        if (birthday is not null)
+        {
+            _dbContext.Birthdays.Remove(birthday);
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+    }
 }
