@@ -70,49 +70,51 @@ public sealed class RuDateTimeParser : IDateTimeParser
     {
         result = null;
 
-        if (DateTime.TryParseExact(
-                input,
-                DateTimeFormats,
-                _culture,
-                DateTimeStyles.AllowWhiteSpaces,
-                out var parsed))
+        foreach (var format in DateTimeFormats)
         {
-            var hasYear = input.Contains("yyyy", StringComparison.OrdinalIgnoreCase) ||
-                          DateTimeFormats.Take(2).Any(f => f.Contains("yyyy") && input.Contains(parsed.Year.ToString()));
-
-            if (!hasYear)
+            if (DateTime.TryParseExact(
+                    input,
+                    format,
+                    _culture,
+                    DateTimeStyles.AllowWhiteSpaces,
+                    out var parsed))
             {
-                var now = _clock.UtcNow;
-                var timeZone = DateTimeZoneProviders.Tzdb[_timeZoneProvider.GetTimeZoneId()];
-                var nowInZone = Instant.FromDateTimeUtc(now).InZone(timeZone);
-                var localDate = nowInZone.Date;
+                var hasYear = format.Contains("yyyy");
 
-                var candidateDate = new LocalDate(localDate.Year, parsed.Month, parsed.Day);
-                if (candidateDate < localDate)
+                if (!hasYear)
                 {
-                    candidateDate = candidateDate.PlusYears(1);
+                    var now = _clock.UtcNow;
+                    var timeZone = DateTimeZoneProviders.Tzdb[_timeZoneProvider.GetTimeZoneId()];
+                    var nowInZone = Instant.FromDateTimeUtc(now).InZone(timeZone);
+                    var localDate = nowInZone.Date;
+
+                    var candidateDate = new LocalDate(localDate.Year, parsed.Month, parsed.Day);
+                    if (candidateDate < localDate)
+                    {
+                        candidateDate = candidateDate.PlusYears(1);
+                    }
+
+                    result = new DateTimeParseResult(
+                        candidateDate.Year,
+                        candidateDate.Month,
+                        candidateDate.Day,
+                        parsed.Hour,
+                        parsed.Minute,
+                        false);
+                }
+                else
+                {
+                    result = new DateTimeParseResult(
+                        parsed.Year,
+                        parsed.Month,
+                        parsed.Day,
+                        parsed.Hour,
+                        parsed.Minute,
+                        true);
                 }
 
-                result = new DateTimeParseResult(
-                    candidateDate.Year,
-                    candidateDate.Month,
-                    candidateDate.Day,
-                    parsed.Hour,
-                    parsed.Minute,
-                    false);
+                return true;
             }
-            else
-            {
-                result = new DateTimeParseResult(
-                    parsed.Year,
-                    parsed.Month,
-                    parsed.Day,
-                    parsed.Hour,
-                    parsed.Minute,
-                    true);
-            }
-
-            return true;
         }
 
         return false;
@@ -122,49 +124,51 @@ public sealed class RuDateTimeParser : IDateTimeParser
     {
         result = null;
 
-        if (DateTime.TryParseExact(
-                input,
-                DateFormats,
-                _culture,
-                DateTimeStyles.AllowWhiteSpaces,
-                out var parsed))
+        foreach (var format in DateFormats)
         {
-            var hasYear = input.Contains("yyyy", StringComparison.OrdinalIgnoreCase) ||
-                          DateFormats.Take(2).Any(f => f.Contains("yyyy") && input.Contains(parsed.Year.ToString()));
-
-            if (!hasYear)
+            if (DateTime.TryParseExact(
+                    input,
+                    format,
+                    _culture,
+                    DateTimeStyles.AllowWhiteSpaces,
+                    out var parsed))
             {
-                var now = _clock.UtcNow;
-                var timeZone = DateTimeZoneProviders.Tzdb[_timeZoneProvider.GetTimeZoneId()];
-                var nowInZone = Instant.FromDateTimeUtc(now).InZone(timeZone);
-                var localDate = nowInZone.Date;
+                var hasYear = format.Contains("yyyy");
 
-                var candidateDate = new LocalDate(localDate.Year, parsed.Month, parsed.Day);
-                if (candidateDate < localDate)
+                if (!hasYear)
                 {
-                    candidateDate = candidateDate.PlusYears(1);
+                    var now = _clock.UtcNow;
+                    var timeZone = DateTimeZoneProviders.Tzdb[_timeZoneProvider.GetTimeZoneId()];
+                    var nowInZone = Instant.FromDateTimeUtc(now).InZone(timeZone);
+                    var localDate = nowInZone.Date;
+
+                    var candidateDate = new LocalDate(localDate.Year, parsed.Month, parsed.Day);
+                    if (candidateDate < localDate)
+                    {
+                        candidateDate = candidateDate.PlusYears(1);
+                    }
+
+                    result = new DateTimeParseResult(
+                        candidateDate.Year,
+                        candidateDate.Month,
+                        candidateDate.Day,
+                        null,
+                        null,
+                        false);
+                }
+                else
+                {
+                    result = new DateTimeParseResult(
+                        parsed.Year,
+                        parsed.Month,
+                        parsed.Day,
+                        null,
+                        null,
+                        true);
                 }
 
-                result = new DateTimeParseResult(
-                    candidateDate.Year,
-                    candidateDate.Month,
-                    candidateDate.Day,
-                    null,
-                    null,
-                    false);
+                return true;
             }
-            else
-            {
-                result = new DateTimeParseResult(
-                    parsed.Year,
-                    parsed.Month,
-                    parsed.Day,
-                    null,
-                    null,
-                    true);
-            }
-
-            return true;
         }
 
         return false;
