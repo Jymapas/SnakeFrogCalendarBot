@@ -150,7 +150,7 @@ public sealed class CommandHandlers
         }
 
         var text = _eventFormatter.Format(events, eventAttachmentCount);
-        var inlineKeyboard = CreateEventListInlineKeyboard(events);
+        var inlineKeyboard = await CreateEventListInlineKeyboard(events, cancellationToken);
 
         await _botClient.SendTextMessageAsync(
             message.Chat.Id,
@@ -159,16 +159,28 @@ public sealed class CommandHandlers
             cancellationToken: cancellationToken);
     }
 
-    private static InlineKeyboardMarkup CreateEventListInlineKeyboard(IReadOnlyList<Event> events)
+    private async Task<InlineKeyboardMarkup> CreateEventListInlineKeyboard(
+        IReadOnlyList<Event> events,
+        CancellationToken cancellationToken)
     {
         var buttons = new List<List<InlineKeyboardButton>>();
 
         foreach (var eventEntity in events)
         {
-            buttons.Add(new List<InlineKeyboardButton>
+            var attachments = await _attachmentRepository.GetByEventIdAsync(eventEntity.Id, cancellationToken);
+            var hasFiles = attachments.Count > 0;
+
+            var row = new List<InlineKeyboardButton>
             {
                 InlineKeyboardButton.WithCallbackData("📎 Добавить файл", $"event_attach:{eventEntity.Id}")
-            });
+            };
+
+            if (hasFiles)
+            {
+                row.Add(InlineKeyboardButton.WithCallbackData("♻️ Заменить файл", $"event_replace_file:{eventEntity.Id}"));
+            }
+
+            buttons.Add(row);
         }
 
         return new InlineKeyboardMarkup(buttons);

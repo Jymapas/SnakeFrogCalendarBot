@@ -32,6 +32,14 @@ public sealed class AttachmentRepository : IAttachmentRepository
             .FirstOrDefaultAsync(a => a.EventId == eventId && a.IsCurrent, cancellationToken);
     }
 
+    public async Task<Attachment?> GetLatestByEventIdForUpdateAsync(int eventId, CancellationToken cancellationToken)
+    {
+        return await _dbContext.Attachments
+            .Where(a => a.EventId == eventId)
+            .OrderByDescending(a => a.Version)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
     public async Task<IReadOnlyList<Attachment>> GetByEventIdAsync(int eventId, CancellationToken cancellationToken)
     {
         return await _dbContext.Attachments

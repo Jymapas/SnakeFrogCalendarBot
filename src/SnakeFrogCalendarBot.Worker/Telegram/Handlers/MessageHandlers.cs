@@ -28,6 +28,7 @@ public sealed class MessageHandlers
     private readonly CreateBirthday _createBirthday;
     private readonly CreateEvent _createEvent;
     private readonly AttachFileToEvent _attachFileToEvent;
+    private readonly ReplaceEventFile _replaceEventFile;
     private readonly IClock _clock;
     private readonly ITimeZoneProvider _timeZoneProvider;
 
@@ -39,6 +40,7 @@ public sealed class MessageHandlers
         CreateBirthday createBirthday,
         CreateEvent createEvent,
         AttachFileToEvent attachFileToEvent,
+        ReplaceEventFile replaceEventFile,
         IClock clock,
         ITimeZoneProvider timeZoneProvider)
     {
@@ -49,6 +51,7 @@ public sealed class MessageHandlers
         _createBirthday = createBirthday;
         _createEvent = createEvent;
         _attachFileToEvent = attachFileToEvent;
+        _replaceEventFile = replaceEventFile;
         _clock = clock;
         _timeZoneProvider = timeZoneProvider;
     }
@@ -109,7 +112,10 @@ public sealed class MessageHandlers
 
     private async Task HandleEventFileAsync(Message message, ConversationState state, CancellationToken cancellationToken)
     {
-        if (!int.TryParse(state.Step, out var eventId))
+        var isReplace = state.Step.StartsWith("replace:");
+        var eventIdStr = isReplace ? state.Step.Split(':')[1] : state.Step;
+        
+        if (!int.TryParse(eventIdStr, out var eventId))
         {
             await _conversationRepository.DeleteAsync(state.UserId, cancellationToken);
             await _botClient.SendTextMessageAsync(
@@ -169,27 +175,48 @@ public sealed class MessageHandlers
 
         try
         {
-            var command = new AttachFileToEventCommand(
-                eventId,
-                fileId,
-                fileUniqueId,
-                fileName ?? "file",
-                mimeType,
-                size);
+            if (isReplace)
+            {
+                var replaceCommand = new ReplaceEventFileCommand(
+                    eventId,
+                    fileId,
+                    fileUniqueId,
+                    fileName ?? "file",
+                    mimeType,
+                    size);
 
-            await _attachFileToEvent.ExecuteAsync(command, cancellationToken);
-            await _conversationRepository.DeleteAsync(state.UserId, cancellationToken);
+                await _replaceEventFile.ExecuteAsync(replaceCommand, cancellationToken);
+                await _conversationRepository.DeleteAsync(state.UserId, cancellationToken);
 
-            await _botClient.SendTextMessageAsync(
-                message.Chat.Id,
-                "Файл успешно прикреплён",
-                cancellationToken: cancellationToken);
+                await _botClient.SendTextMessageAsync(
+                    message.Chat.Id,
+                    "Файл успешно заменён",
+                    cancellationToken: cancellationToken);
+            }
+            else
+            {
+                var attachCommand = new AttachFileToEventCommand(
+                    eventId,
+                    fileId,
+                    fileUniqueId,
+                    fileName ?? "file",
+                    mimeType,
+                    size);
+
+                await _attachFileToEvent.ExecuteAsync(attachCommand, cancellationToken);
+                await _conversationRepository.DeleteAsync(state.UserId, cancellationToken);
+
+                await _botClient.SendTextMessageAsync(
+                    message.Chat.Id,
+                    "Файл успешно прикреплён",
+                    cancellationToken: cancellationToken);
+            }
         }
         catch (Exception ex)
         {
             await _botClient.SendTextMessageAsync(
                 message.Chat.Id,
-                $"Ошибка при прикреплении файла: {ex.Message}",
+                $"Ошибка: {ex.Message}",
                 cancellationToken: cancellationToken);
         }
     }

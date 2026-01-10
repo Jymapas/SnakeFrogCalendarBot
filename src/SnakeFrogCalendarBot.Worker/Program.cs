@@ -66,6 +66,7 @@ try
             services.AddScoped<CreateEvent>();
             services.AddScoped<ListUpcomingItems>();
             services.AddScoped<AttachFileToEvent>();
+            services.AddScoped<ReplaceEventFile>();
             services.AddScoped<GetEventWithAttachment>();
         });
 
