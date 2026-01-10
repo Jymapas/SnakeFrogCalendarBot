@@ -14,6 +14,7 @@ public sealed class CalendarDbContext : DbContext
     public DbSet<ConversationState> ConversationStates => Set<ConversationState>();
     public DbSet<Event> Events => Set<Event>();
     public DbSet<Attachment> Attachments => Set<Attachment>();
+    public DbSet<NotificationRun> NotificationRuns => Set<NotificationRun>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
