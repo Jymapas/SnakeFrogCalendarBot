@@ -3,6 +3,7 @@ using SnakeFrogCalendarBot.Application.Abstractions.Time;
 using SnakeFrogCalendarBot.Application.Formatting;
 using SnakeFrogCalendarBot.Application.UseCases.Birthdays;
 using SnakeFrogCalendarBot.Application.UseCases.Events;
+using SnakeFrogCalendarBot.Application.UseCases.Notifications;
 using SnakeFrogCalendarBot.Domain.Entities;
 using Telegram.Bot;
 using Telegram.Bot.Types;
@@ -20,6 +21,11 @@ public sealed class CommandHandlers
     private readonly ListUpcomingItems _listUpcomingItems;
     private readonly EventListFormatter _eventFormatter;
     private readonly IAttachmentRepository _attachmentRepository;
+    private readonly BuildDailyDigest _buildDailyDigest;
+    private readonly BuildWeeklyDigest _buildWeeklyDigest;
+    private readonly BuildMonthlyDigest _buildMonthlyDigest;
+    private readonly DigestFormatter _digestFormatter;
+    private readonly SendDigest _sendDigest;
 
     public CommandHandlers(
         ITelegramBotClient botClient,
@@ -29,7 +35,12 @@ public sealed class CommandHandlers
         BirthdayListFormatter birthdayFormatter,
         ListUpcomingItems listUpcomingItems,
         EventListFormatter eventFormatter,
-        IAttachmentRepository attachmentRepository)
+        IAttachmentRepository attachmentRepository,
+        BuildDailyDigest buildDailyDigest,
+        BuildWeeklyDigest buildWeeklyDigest,
+        BuildMonthlyDigest buildMonthlyDigest,
+        DigestFormatter digestFormatter,
+        SendDigest sendDigest)
     {
         _botClient = botClient;
         _conversationRepository = conversationRepository;
@@ -39,6 +50,11 @@ public sealed class CommandHandlers
         _listUpcomingItems = listUpcomingItems;
         _eventFormatter = eventFormatter;
         _attachmentRepository = attachmentRepository;
+        _buildDailyDigest = buildDailyDigest;
+        _buildWeeklyDigest = buildWeeklyDigest;
+        _buildMonthlyDigest = buildMonthlyDigest;
+        _digestFormatter = digestFormatter;
+        _sendDigest = sendDigest;
     }
 
     public async Task HandleAsync(Message message, CancellationToken cancellationToken)
@@ -72,10 +88,13 @@ public sealed class CommandHandlers
             case "/cancel":
                 await CancelConversationAsync(message, cancellationToken);
                 break;
+            case "/digest_test":
+                await TestDigestAsync(message, cancellationToken);
+                break;
             default:
                 await _botClient.SendTextMessageAsync(
                     message.Chat.Id,
-                    "Неизвестная команда. Доступные: /birthday_add, /birthday_list, /event_add, /event_list, /cancel",
+                    "Неизвестная команда. Доступные: /birthday_add, /birthday_list, /event_add, /event_list, /cancel, /digest_test",
                     cancellationToken: cancellationToken);
                 break;
         }
@@ -199,5 +218,61 @@ public sealed class CommandHandlers
             message.Chat.Id,
             "Диалог отменён",
             cancellationToken: cancellationToken);
+    }
+
+    private async Task TestDigestAsync(Message message, CancellationToken cancellationToken)
+    {
+        var parts = message.Text?.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts is null || parts.Length < 2)
+        {
+            await _botClient.SendTextMessageAsync(
+                message.Chat.Id,
+                "Использование: /digest_test daily|weekly|monthly",
+                cancellationToken: cancellationToken);
+            return;
+        }
+
+        var digestType = parts[1].ToLowerInvariant();
+        string digestText;
+
+        try
+        {
+            switch (digestType)
+            {
+                case "daily":
+                    var dailyResult = await _buildDailyDigest.ExecuteAsync(cancellationToken);
+                    digestText = _digestFormatter.FormatDaily(dailyResult.Date, dailyResult.Items);
+                    break;
+
+                case "weekly":
+                    var weeklyResult = await _buildWeeklyDigest.ExecuteAsync(cancellationToken);
+                    digestText = _digestFormatter.FormatWeekly(weeklyResult.PeriodStart, weeklyResult.PeriodEnd, weeklyResult.Items);
+                    break;
+
+                case "monthly":
+                    var monthlyResult = await _buildMonthlyDigest.ExecuteAsync(cancellationToken);
+                    digestText = _digestFormatter.FormatMonthly(monthlyResult.PeriodStart, monthlyResult.PeriodEnd, monthlyResult.Items);
+                    break;
+
+                default:
+                    await _botClient.SendTextMessageAsync(
+                        message.Chat.Id,
+                        "Неизвестный тип дайджеста. Используйте: daily, weekly или monthly",
+                        cancellationToken: cancellationToken);
+                    return;
+            }
+
+            await _botClient.SendTextMessageAsync(
+                message.Chat.Id,
+                digestText,
+                cancellationToken: cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            await _botClient.SendTextMessageAsync(
+                message.Chat.Id,
+                $"Ошибка при формировании дайджеста: {ex.Message}",
+                cancellationToken: cancellationToken);
+        }
     }
 }
