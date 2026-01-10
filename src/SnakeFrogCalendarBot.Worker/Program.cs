@@ -36,6 +36,7 @@ try
             services.AddSingleton<UpdateDispatcher>();
             services.AddScoped<CommandHandlers>();
             services.AddScoped<MessageHandlers>();
+            services.AddScoped<CallbackHandlers>();
             services.AddHostedService<BotHostedService>();
 
             services.AddDbContext<CalendarDbContext>(db =>
@@ -46,6 +47,7 @@ try
 
             services.AddScoped<IBirthdayRepository, BirthdayRepository>();
             services.AddScoped<IEventRepository, EventRepository>();
+            services.AddScoped<IAttachmentRepository, AttachmentRepository>();
             services.AddScoped<IConversationStateRepository, ConversationStateRepository>();
 
             services.AddSingleton<IClock, SystemClock>();
@@ -63,6 +65,8 @@ try
             services.AddScoped<ListBirthdays>();
             services.AddScoped<CreateEvent>();
             services.AddScoped<ListUpcomingItems>();
+            services.AddScoped<AttachFileToEvent>();
+            services.AddScoped<GetEventWithAttachment>();
         });
 
     var host = builder.Build();
