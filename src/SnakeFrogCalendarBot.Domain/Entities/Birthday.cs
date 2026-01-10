@@ -52,4 +52,49 @@ public sealed class Birthday
     {
         UpdatedAtUtc = updatedAtUtc;
     }
+
+    public void UpdatePersonName(string personName, DateTime updatedAtUtc)
+    {
+        if (string.IsNullOrWhiteSpace(personName))
+        {
+            throw new DomainException("Person name is required.");
+        }
+
+        PersonName = personName.Trim();
+        UpdatedAtUtc = updatedAtUtc;
+    }
+
+    public void UpdateDate(int day, int month, DateTime updatedAtUtc)
+    {
+        if (day is < 1 or > 31)
+        {
+            throw new DomainException("Day must be between 1 and 31.");
+        }
+
+        if (month is < 1 or > 12)
+        {
+            throw new DomainException("Month must be between 1 and 12.");
+        }
+
+        Day = day;
+        Month = month;
+        UpdatedAtUtc = updatedAtUtc;
+    }
+
+    public void UpdateBirthYear(int? birthYear, DateTime updatedAtUtc)
+    {
+        if (birthYear.HasValue && birthYear.Value <= 0)
+        {
+            throw new DomainException("Birth year must be a positive number.");
+        }
+
+        BirthYear = birthYear;
+        UpdatedAtUtc = updatedAtUtc;
+    }
+
+    public void UpdateContact(string? contact, DateTime updatedAtUtc)
+    {
+        Contact = string.IsNullOrWhiteSpace(contact) ? null : contact.Trim();
+        UpdatedAtUtc = updatedAtUtc;
+    }
 }

@@ -97,4 +97,74 @@ public sealed class Event
     {
         UpdatedAtUtc = updatedAtUtc;
     }
+
+    public void UpdateTitle(string title, DateTime updatedAtUtc)
+    {
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            throw new DomainException("Title is required.");
+        }
+
+        Title = title.Trim();
+        UpdatedAtUtc = updatedAtUtc;
+    }
+
+    public void UpdateDescription(string? description, DateTime updatedAtUtc)
+    {
+        Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
+        UpdatedAtUtc = updatedAtUtc;
+    }
+
+    public void UpdatePlace(string? place, DateTime updatedAtUtc)
+    {
+        Place = string.IsNullOrWhiteSpace(place) ? null : place.Trim();
+        UpdatedAtUtc = updatedAtUtc;
+    }
+
+    public void UpdateLink(string? link, DateTime updatedAtUtc)
+    {
+        Link = string.IsNullOrWhiteSpace(link) ? null : link.Trim();
+        UpdatedAtUtc = updatedAtUtc;
+    }
+
+    public void UpdateOccursAtUtc(DateTimeOffset occursAtUtc, DateTime updatedAtUtc)
+    {
+        if (Kind != EventKind.OneOff)
+        {
+            throw new DomainException("Can only update OccursAtUtc for OneOff events.");
+        }
+
+        OccursAtUtc = occursAtUtc;
+        UpdatedAtUtc = updatedAtUtc;
+    }
+
+    public void UpdateYearlyDate(int month, int day, TimeSpan? timeOfDay, bool isAllDay, DateTime updatedAtUtc)
+    {
+        if (Kind != EventKind.Yearly)
+        {
+            throw new DomainException("Can only update yearly date for Yearly events.");
+        }
+
+        if (month is < 1 or > 12)
+        {
+            throw new DomainException("Month must be between 1 and 12.");
+        }
+
+        if (day is < 1 or > 31)
+        {
+            throw new DomainException("Day must be between 1 and 31.");
+        }
+
+        Month = month;
+        Day = day;
+        TimeOfDay = timeOfDay;
+        IsAllDay = isAllDay;
+        UpdatedAtUtc = updatedAtUtc;
+    }
+
+    public void UpdateIsAllDay(bool isAllDay, DateTime updatedAtUtc)
+    {
+        IsAllDay = isAllDay;
+        UpdatedAtUtc = updatedAtUtc;
+    }
 }
