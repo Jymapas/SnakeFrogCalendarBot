@@ -6,6 +6,7 @@ using SnakeFrogCalendarBot.Application.UseCases.Events;
 using SnakeFrogCalendarBot.Domain.Entities;
 using Telegram.Bot;
 using Telegram.Bot.Types;
+using Telegram.Bot.Types.ReplyMarkups;
 
 namespace SnakeFrogCalendarBot.Worker.Telegram.Handlers;
 
@@ -18,6 +19,7 @@ public sealed class CommandHandlers
     private readonly BirthdayListFormatter _birthdayFormatter;
     private readonly ListUpcomingItems _listUpcomingItems;
     private readonly EventListFormatter _eventFormatter;
+    private readonly IAttachmentRepository _attachmentRepository;
 
     public CommandHandlers(
         ITelegramBotClient botClient,
@@ -26,7 +28,8 @@ public sealed class CommandHandlers
         ListBirthdays listBirthdays,
         BirthdayListFormatter birthdayFormatter,
         ListUpcomingItems listUpcomingItems,
-        EventListFormatter eventFormatter)
+        EventListFormatter eventFormatter,
+        IAttachmentRepository attachmentRepository)
     {
         _botClient = botClient;
         _conversationRepository = conversationRepository;
@@ -35,6 +38,7 @@ public sealed class CommandHandlers
         _birthdayFormatter = birthdayFormatter;
         _listUpcomingItems = listUpcomingItems;
         _eventFormatter = eventFormatter;
+        _attachmentRepository = attachmentRepository;
     }
 
     public async Task HandleAsync(Message message, CancellationToken cancellationToken)
@@ -137,12 +141,49 @@ public sealed class CommandHandlers
     private async Task SendEventListAsync(Message message, CancellationToken cancellationToken)
     {
         var events = await _listUpcomingItems.ExecuteAsync(cancellationToken);
-        var text = _eventFormatter.Format(events);
+        
+        var eventAttachmentCount = new Dictionary<int, int>();
+        foreach (var eventEntity in events)
+        {
+            var attachments = await _attachmentRepository.GetByEventIdAsync(eventEntity.Id, cancellationToken);
+            eventAttachmentCount[eventEntity.Id] = attachments.Count;
+        }
+
+        var text = _eventFormatter.Format(events, eventAttachmentCount);
+        var inlineKeyboard = await CreateEventListInlineKeyboard(events, cancellationToken);
 
         await _botClient.SendTextMessageAsync(
             message.Chat.Id,
             text,
+            replyMarkup: inlineKeyboard,
             cancellationToken: cancellationToken);
+    }
+
+    private async Task<InlineKeyboardMarkup> CreateEventListInlineKeyboard(
+        IReadOnlyList<Event> events,
+        CancellationToken cancellationToken)
+    {
+        var buttons = new List<List<InlineKeyboardButton>>();
+
+        foreach (var eventEntity in events)
+        {
+            var attachments = await _attachmentRepository.GetByEventIdAsync(eventEntity.Id, cancellationToken);
+            var hasFiles = attachments.Count > 0;
+
+            var row = new List<InlineKeyboardButton>
+            {
+                InlineKeyboardButton.WithCallbackData("📎 Добавить файл", $"event_attach:{eventEntity.Id}")
+            };
+
+            if (hasFiles)
+            {
+                row.Add(InlineKeyboardButton.WithCallbackData("♻️ Заменить файл", $"event_replace_file:{eventEntity.Id}"));
+            }
+
+            buttons.Add(row);
+        }
+
+        return new InlineKeyboardMarkup(buttons);
     }
 
     private async Task CancelConversationAsync(Message message, CancellationToken cancellationToken)

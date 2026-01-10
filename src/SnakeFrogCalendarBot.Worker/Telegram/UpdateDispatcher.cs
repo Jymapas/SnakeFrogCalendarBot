@@ -23,6 +23,12 @@ public sealed class UpdateDispatcher
 
     public async Task HandleUpdateAsync(ITelegramBotClient botClient, Update update, CancellationToken cancellationToken)
     {
+        if (update.CallbackQuery is { } callbackQuery)
+        {
+            await HandleCallbackQueryAsync(botClient, callbackQuery, cancellationToken);
+            return;
+        }
+
         if (update.Message is not { } message)
         {
             return;
@@ -43,16 +49,11 @@ public sealed class UpdateDispatcher
             return;
         }
 
-        if (string.IsNullOrWhiteSpace(message.Text))
-        {
-            return;
-        }
-
         using var scope = _scopeFactory.CreateScope();
         var commandHandlers = scope.ServiceProvider.GetRequiredService<Handlers.CommandHandlers>();
         var messageHandlers = scope.ServiceProvider.GetRequiredService<Handlers.MessageHandlers>();
 
-        if (message.Text.StartsWith('/'))
+        if (!string.IsNullOrWhiteSpace(message.Text) && message.Text.StartsWith('/'))
         {
             await commandHandlers.HandleAsync(message, cancellationToken);
         }
@@ -60,6 +61,31 @@ public sealed class UpdateDispatcher
         {
             await messageHandlers.HandleAsync(message, cancellationToken);
         }
+    }
+
+    private async Task HandleCallbackQueryAsync(
+        ITelegramBotClient botClient,
+        Telegram.Bot.Types.CallbackQuery callbackQuery,
+        CancellationToken cancellationToken)
+    {
+        var userId = callbackQuery.From?.Id;
+        if (userId is null)
+        {
+            return;
+        }
+
+        if (!_accessGuard.IsAllowed(userId.Value))
+        {
+            await botClient.AnswerCallbackQueryAsync(
+                callbackQuery.Id,
+                "У вас нет доступа к этому боту",
+                cancellationToken: cancellationToken);
+            return;
+        }
+
+        using var scope = _scopeFactory.CreateScope();
+        var callbackHandlers = scope.ServiceProvider.GetRequiredService<Handlers.CallbackHandlers>();
+        await callbackHandlers.HandleAsync(callbackQuery, cancellationToken);
     }
 
     public Task HandleErrorAsync(ITelegramBotClient botClient, Exception exception, CancellationToken cancellationToken)
