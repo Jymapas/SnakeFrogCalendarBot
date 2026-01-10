@@ -34,7 +34,7 @@ public sealed class CallbackHandlers
 
         var data = callbackQuery.Data;
 
-        if (data.StartsWith("event_attach:") || data.StartsWith("event_replace_file:"))
+        if (data.StartsWith("event_attach:"))
         {
             var eventIdStr = data.Contains(':') ? data.Split(':')[1] : null;
             if (!int.TryParse(eventIdStr, out var eventId))
@@ -70,9 +70,13 @@ public sealed class CallbackHandlers
                 callbackQuery.Id,
                 cancellationToken: cancellationToken);
 
+            var messageText = eventWithAttachment.Attachments.Count > 0
+                ? $"Отправьте файл для добавления к событию (уже прикреплено файлов: {eventWithAttachment.Attachments.Count})"
+                : "Отправьте файл, который нужно прикрепить к событию";
+
             await _botClient.SendTextMessageAsync(
                 callbackQuery.Message!.Chat.Id,
-                "Отправьте файл, который нужно прикрепить к событию",
+                messageText,
                 cancellationToken: cancellationToken);
         }
     }

@@ -25,10 +25,10 @@ public sealed class GetEventWithAttachment
             return null;
         }
 
-        var attachment = await _attachmentRepository.GetCurrentByEventIdAsync(eventId, cancellationToken);
+        var attachments = await _attachmentRepository.GetByEventIdAsync(eventId, cancellationToken);
 
-        return new EventWithAttachmentResult(eventEntity, attachment);
+        return new EventWithAttachmentResult(eventEntity, attachments);
     }
 }
 
-public sealed record EventWithAttachmentResult(Event Event, Attachment? Attachment);
+public sealed record EventWithAttachmentResult(Event Event, IReadOnlyList<Attachment> Attachments);

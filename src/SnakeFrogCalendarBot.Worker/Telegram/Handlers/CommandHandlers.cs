@@ -142,15 +142,15 @@ public sealed class CommandHandlers
     {
         var events = await _listUpcomingItems.ExecuteAsync(cancellationToken);
         
-        var eventHasAttachment = new Dictionary<int, bool>();
+        var eventAttachmentCount = new Dictionary<int, int>();
         foreach (var eventEntity in events)
         {
-            var attachment = await _attachmentRepository.GetCurrentByEventIdAsync(eventEntity.Id, cancellationToken);
-            eventHasAttachment[eventEntity.Id] = attachment is not null;
+            var attachments = await _attachmentRepository.GetByEventIdAsync(eventEntity.Id, cancellationToken);
+            eventAttachmentCount[eventEntity.Id] = attachments.Count;
         }
 
-        var text = _eventFormatter.Format(events, eventHasAttachment);
-        var inlineKeyboard = CreateEventListInlineKeyboard(events, eventHasAttachment);
+        var text = _eventFormatter.Format(events, eventAttachmentCount);
+        var inlineKeyboard = CreateEventListInlineKeyboard(events);
 
         await _botClient.SendTextMessageAsync(
             message.Chat.Id,
@@ -159,21 +159,15 @@ public sealed class CommandHandlers
             cancellationToken: cancellationToken);
     }
 
-    private static InlineKeyboardMarkup CreateEventListInlineKeyboard(
-        IReadOnlyList<Event> events,
-        IReadOnlyDictionary<int, bool> eventHasAttachment)
+    private static InlineKeyboardMarkup CreateEventListInlineKeyboard(IReadOnlyList<Event> events)
     {
         var buttons = new List<List<InlineKeyboardButton>>();
 
         foreach (var eventEntity in events)
         {
-            var hasAttachment = eventHasAttachment.TryGetValue(eventEntity.Id, out var has) && has;
-            var buttonText = hasAttachment ? "♻️ Заменить файл" : "📎 Прикрепить файл";
-            var callbackData = hasAttachment ? $"event_replace_file:{eventEntity.Id}" : $"event_attach:{eventEntity.Id}";
-
             buttons.Add(new List<InlineKeyboardButton>
             {
-                InlineKeyboardButton.WithCallbackData(buttonText, callbackData)
+                InlineKeyboardButton.WithCallbackData("📎 Добавить файл", $"event_attach:{eventEntity.Id}")
             });
         }
 

@@ -17,7 +17,7 @@ public sealed class EventListFormatter
         _timeZoneProvider = timeZoneProvider;
     }
 
-    public string Format(IReadOnlyList<Event> events, IReadOnlyDictionary<int, bool> eventHasAttachment)
+    public string Format(IReadOnlyList<Event> events, IReadOnlyDictionary<int, int> eventAttachmentCount)
     {
         if (events.Count == 0)
         {
@@ -65,9 +65,16 @@ public sealed class EventListFormatter
             builder.Append(" — ");
             builder.Append(eventEntity.Title);
 
-            if (eventHasAttachment.TryGetValue(eventEntity.Id, out var hasAttachment) && hasAttachment)
+            if (eventAttachmentCount.TryGetValue(eventEntity.Id, out var count) && count > 0)
             {
-                builder.Append(" 📎");
+                if (count == 1)
+                {
+                    builder.Append(" 📎");
+                }
+                else
+                {
+                    builder.Append($" 📎({count})");
+                }
             }
 
             if (eventEntity.Kind == EventKind.Yearly)

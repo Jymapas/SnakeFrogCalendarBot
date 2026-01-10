@@ -34,13 +34,6 @@ public sealed class AttachFileToEvent
             ? existingAttachments.Max(a => a.Version) + 1
             : 1;
 
-        var currentAttachment = await _attachmentRepository.GetCurrentByEventIdForUpdateAsync(command.EventId, cancellationToken);
-        if (currentAttachment is not null)
-        {
-            currentAttachment.MarkAsNotCurrent();
-            await _attachmentRepository.UpdateAsync(currentAttachment, cancellationToken);
-        }
-
         var attachment = new Attachment(
             command.EventId,
             command.TelegramFileId,
