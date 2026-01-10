@@ -78,8 +78,12 @@ try
 
             services.AddScoped<CreateBirthday>();
             services.AddScoped<ListBirthdays>();
+            services.AddScoped<UpdateBirthday>();
+            services.AddScoped<DeleteBirthday>();
             services.AddScoped<CreateEvent>();
             services.AddScoped<ListUpcomingItems>();
+            services.AddScoped<UpdateEvent>();
+            services.AddScoped<DeleteEvent>();
             services.AddScoped<AttachFileToEvent>();
             services.AddScoped<ReplaceEventFile>();
             services.AddScoped<GetEventWithAttachment>();
