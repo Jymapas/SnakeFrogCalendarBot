@@ -88,7 +88,7 @@ public sealed class MessageHandlers
         {
             if (state is not null)
             {
-                await _botClient.SendTextMessageAsync(
+                await _botClient.SendMessage(
                     message.Chat.Id,
                     "Пожалуйста, отправьте текстовое сообщение",
                     cancellationToken: cancellationToken);
@@ -98,7 +98,7 @@ public sealed class MessageHandlers
 
         if (state is null)
         {
-            await _botClient.SendTextMessageAsync(
+            await _botClient.SendMessage(
                 message.Chat.Id,
                 "Используйте /birthday_add, /birthday_list, /event_add или /event_list",
                 cancellationToken: cancellationToken);
@@ -124,7 +124,7 @@ public sealed class MessageHandlers
         else
         {
             await _conversationRepository.DeleteAsync(userId, cancellationToken);
-            await _botClient.SendTextMessageAsync(
+            await _botClient.SendMessage(
                 message.Chat.Id,
                 "Состояние диалога сброшено. Начните заново",
                 cancellationToken: cancellationToken);
@@ -139,7 +139,7 @@ public sealed class MessageHandlers
         if (!int.TryParse(eventIdStr, out var eventId))
         {
             await _conversationRepository.DeleteAsync(state.UserId, cancellationToken);
-            await _botClient.SendTextMessageAsync(
+            await _botClient.SendMessage(
                 message.Chat.Id,
                 "Ошибка: неверный идентификатор события",
                 cancellationToken: cancellationToken);
@@ -187,7 +187,7 @@ public sealed class MessageHandlers
         }
         else
         {
-            await _botClient.SendTextMessageAsync(
+            await _botClient.SendMessage(
                 message.Chat.Id,
                 "Пожалуйста, отправьте файл",
                 cancellationToken: cancellationToken);
@@ -209,7 +209,7 @@ public sealed class MessageHandlers
                 await _replaceEventFile.ExecuteAsync(replaceCommand, cancellationToken);
                 await _conversationRepository.DeleteAsync(state.UserId, cancellationToken);
 
-                await _botClient.SendTextMessageAsync(
+                await _botClient.SendMessage(
                     message.Chat.Id,
                     "Файл успешно заменён",
                     cancellationToken: cancellationToken);
@@ -227,7 +227,7 @@ public sealed class MessageHandlers
                 await _attachFileToEvent.ExecuteAsync(attachCommand, cancellationToken);
                 await _conversationRepository.DeleteAsync(state.UserId, cancellationToken);
 
-                await _botClient.SendTextMessageAsync(
+                await _botClient.SendMessage(
                     message.Chat.Id,
                     "Файл успешно прикреплён",
                     cancellationToken: cancellationToken);
@@ -235,7 +235,7 @@ public sealed class MessageHandlers
         }
         catch (Exception ex)
         {
-            await _botClient.SendTextMessageAsync(
+            await _botClient.SendMessage(
                 message.Chat.Id,
                 $"Ошибка: {ex.Message}",
                 cancellationToken: cancellationToken);
@@ -258,7 +258,7 @@ public sealed class MessageHandlers
             case BirthdayConversationSteps.Name:
                 data.PersonName = text;
                 await UpdateStateAsync(state, BirthdayConversationSteps.Date, data, now, cancellationToken);
-                await _botClient.SendTextMessageAsync(
+                await _botClient.SendMessage(
                     message.Chat.Id,
                     "Введите дату (например, 7 января)",
                     cancellationToken: cancellationToken);
@@ -267,7 +267,7 @@ public sealed class MessageHandlers
             case BirthdayConversationSteps.Date:
                 if (!_birthdayDateParser.TryParseMonthDay(text, out var day, out var month))
                 {
-                    await _botClient.SendTextMessageAsync(
+                    await _botClient.SendMessage(
                         message.Chat.Id,
                         "Не удалось распознать дату. Формат: 7 января",
                         cancellationToken: cancellationToken);
@@ -277,7 +277,7 @@ public sealed class MessageHandlers
                 data.Day = day;
                 data.Month = month;
                 await UpdateStateAsync(state, BirthdayConversationSteps.BirthYear, data, now, cancellationToken);
-                await _botClient.SendTextMessageAsync(
+                await _botClient.SendMessage(
                     message.Chat.Id,
                     "Введите год рождения или 'пропустить'",
                     cancellationToken: cancellationToken);
@@ -290,7 +290,7 @@ public sealed class MessageHandlers
                 }
                 else if (!int.TryParse(text, out var birthYear) || birthYear <= 0)
                 {
-                    await _botClient.SendTextMessageAsync(
+                    await _botClient.SendMessage(
                         message.Chat.Id,
                         "Введите год рождения или 'пропустить'",
                         cancellationToken: cancellationToken);
@@ -302,7 +302,7 @@ public sealed class MessageHandlers
                 }
 
                 await UpdateStateAsync(state, BirthdayConversationSteps.Contact, data, now, cancellationToken);
-                await _botClient.SendTextMessageAsync(
+                await _botClient.SendMessage(
                     message.Chat.Id,
                     "Введите контакт или 'пропустить'",
                     cancellationToken: cancellationToken);
@@ -315,7 +315,7 @@ public sealed class MessageHandlers
 
             default:
                 await _conversationRepository.DeleteAsync(state.UserId, cancellationToken);
-                await _botClient.SendTextMessageAsync(
+                await _botClient.SendMessage(
                     message.Chat.Id,
                     "Состояние диалога сброшено. Начните заново с /birthday_add",
                     cancellationToken: cancellationToken);
@@ -328,7 +328,7 @@ public sealed class MessageHandlers
         if (string.IsNullOrWhiteSpace(data.PersonName) || data.Day is null || data.Month is null)
         {
             await _conversationRepository.DeleteAsync(message.From!.Id, cancellationToken);
-            await _botClient.SendTextMessageAsync(
+            await _botClient.SendMessage(
                 message.Chat.Id,
                 "Не удалось сохранить запись. Начните заново с /birthday_add",
                 cancellationToken: cancellationToken);
@@ -345,7 +345,7 @@ public sealed class MessageHandlers
         await _createBirthday.ExecuteAsync(command, cancellationToken);
         await _conversationRepository.DeleteAsync(message.From!.Id, cancellationToken);
 
-        await _botClient.SendTextMessageAsync(
+        await _botClient.SendMessage(
             message.Chat.Id,
             "Сохранено",
             cancellationToken: cancellationToken);
@@ -394,7 +394,7 @@ public sealed class MessageHandlers
             case EventConversationSteps.Title:
                 data.Title = text;
                 await UpdateEventStateAsync(state, EventConversationSteps.Date, data, now, cancellationToken);
-                await _botClient.SendTextMessageAsync(
+                await _botClient.SendMessage(
                     message.Chat.Id,
                     "Введите дату (например, 7 января 2026 или 2026-01-07)",
                     cancellationToken: cancellationToken);
@@ -403,7 +403,7 @@ public sealed class MessageHandlers
             case EventConversationSteps.Date:
                 if (!_dateTimeParser.TryParse(text, out var parseResult) || parseResult is null)
                 {
-                    await _botClient.SendTextMessageAsync(
+                    await _botClient.SendMessage(
                         message.Chat.Id,
                         "Не удалось распознать дату. Формат: 7 января 2026 или 2026-01-07",
                         cancellationToken: cancellationToken);
@@ -421,7 +421,7 @@ public sealed class MessageHandlers
                 {
                     data.IsAllDay = false;
                     await UpdateEventStateAsync(state, EventConversationSteps.Kind, data, now, cancellationToken);
-                    await _botClient.SendTextMessageAsync(
+                    await _botClient.SendMessage(
                         message.Chat.Id,
                         "Выберите тип события: 'разовое' или 'ежегодное'",
                         cancellationToken: cancellationToken);
@@ -429,7 +429,7 @@ public sealed class MessageHandlers
                 else
                 {
                     await UpdateEventStateAsync(state, EventConversationSteps.AllDay, data, now, cancellationToken);
-                    await _botClient.SendTextMessageAsync(
+                    await _botClient.SendMessage(
                         message.Chat.Id,
                         "Это событие на весь день? (да/нет)",
                         cancellationToken: cancellationToken);
@@ -445,7 +445,7 @@ public sealed class MessageHandlers
                 if (!isAllDay)
                 {
                     await UpdateEventStateAsync(state, EventConversationSteps.Time, data, now, cancellationToken);
-                    await _botClient.SendTextMessageAsync(
+                    await _botClient.SendMessage(
                         message.Chat.Id,
                         "Введите время (HH:mm)",
                         cancellationToken: cancellationToken);
@@ -453,7 +453,7 @@ public sealed class MessageHandlers
                 else
                 {
                     await UpdateEventStateAsync(state, EventConversationSteps.Kind, data, now, cancellationToken);
-                    await _botClient.SendTextMessageAsync(
+                    await _botClient.SendMessage(
                         message.Chat.Id,
                         "Выберите тип события: 'разовое' или 'ежегодное'",
                         cancellationToken: cancellationToken);
@@ -464,7 +464,7 @@ public sealed class MessageHandlers
                 if (!_dateTimeParser.TryParse(text, out var timeResult) || timeResult is null ||
                     !timeResult.Hour.HasValue || !timeResult.Minute.HasValue)
                 {
-                    await _botClient.SendTextMessageAsync(
+                    await _botClient.SendMessage(
                         message.Chat.Id,
                         "Не удалось распознать время. Формат: HH:mm",
                         cancellationToken: cancellationToken);
@@ -474,7 +474,7 @@ public sealed class MessageHandlers
                 data.Hour = timeResult.Hour;
                 data.Minute = timeResult.Minute;
                 await UpdateEventStateAsync(state, EventConversationSteps.Kind, data, now, cancellationToken);
-                await _botClient.SendTextMessageAsync(
+                await _botClient.SendMessage(
                     message.Chat.Id,
                     "Выберите тип события: 'разовое' или 'ежегодное'",
                     cancellationToken: cancellationToken);
@@ -492,7 +492,7 @@ public sealed class MessageHandlers
                 }
                 else
                 {
-                    await _botClient.SendTextMessageAsync(
+                    await _botClient.SendMessage(
                         message.Chat.Id,
                         "Введите 'разовое' или 'ежегодное'",
                         cancellationToken: cancellationToken);
@@ -500,7 +500,7 @@ public sealed class MessageHandlers
                 }
 
                 await UpdateEventStateAsync(state, EventConversationSteps.Description, data, now, cancellationToken);
-                await _botClient.SendTextMessageAsync(
+                await _botClient.SendMessage(
                     message.Chat.Id,
                     "Введите описание или 'пропустить'",
                     cancellationToken: cancellationToken);
@@ -509,7 +509,7 @@ public sealed class MessageHandlers
             case EventConversationSteps.Description:
                 data.Description = IsSkip(text) ? null : text;
                 await UpdateEventStateAsync(state, EventConversationSteps.Place, data, now, cancellationToken);
-                await _botClient.SendTextMessageAsync(
+                await _botClient.SendMessage(
                     message.Chat.Id,
                     "Введите место или 'пропустить'",
                     cancellationToken: cancellationToken);
@@ -518,7 +518,7 @@ public sealed class MessageHandlers
             case EventConversationSteps.Place:
                 data.Place = IsSkip(text) ? null : text;
                 await UpdateEventStateAsync(state, EventConversationSteps.Link, data, now, cancellationToken);
-                await _botClient.SendTextMessageAsync(
+                await _botClient.SendMessage(
                     message.Chat.Id,
                     "Введите ссылку или 'пропустить'",
                     cancellationToken: cancellationToken);
@@ -531,7 +531,7 @@ public sealed class MessageHandlers
 
             default:
                 await _conversationRepository.DeleteAsync(state.UserId, cancellationToken);
-                await _botClient.SendTextMessageAsync(
+                await _botClient.SendMessage(
                     message.Chat.Id,
                     "Состояние диалога сброшено. Начните заново с /event_add",
                     cancellationToken: cancellationToken);
@@ -544,7 +544,7 @@ public sealed class MessageHandlers
         if (string.IsNullOrWhiteSpace(data.Title) || data.Month is null || data.Day is null || data.Kind is null)
         {
             await _conversationRepository.DeleteAsync(message.From!.Id, cancellationToken);
-            await _botClient.SendTextMessageAsync(
+            await _botClient.SendMessage(
                 message.Chat.Id,
                 "Не удалось сохранить событие. Начните заново с /event_add",
                 cancellationToken: cancellationToken);
@@ -562,7 +562,7 @@ public sealed class MessageHandlers
             if (data.Year is null || data.Month is null || data.Day is null)
             {
                 await _conversationRepository.DeleteAsync(message.From!.Id, cancellationToken);
-                await _botClient.SendTextMessageAsync(
+                await _botClient.SendMessage(
                     message.Chat.Id,
                     "Не удалось сохранить событие. Начните заново с /event_add",
                     cancellationToken: cancellationToken);
@@ -603,7 +603,7 @@ public sealed class MessageHandlers
         else
         {
             TimeSpan? timeOfDay = null;
-            if (!data.IsAllDay && data.Hour.HasValue && data.Minute.HasValue)
+            if (!data.IsAllDay!.Value && data.Hour.HasValue && data.Minute.HasValue)
             {
                 timeOfDay = new TimeSpan(data.Hour.Value, data.Minute.Value, 0);
             }
@@ -624,7 +624,7 @@ public sealed class MessageHandlers
         await _createEvent.ExecuteAsync(command, cancellationToken);
         await _conversationRepository.DeleteAsync(message.From!.Id, cancellationToken);
 
-        await _botClient.SendTextMessageAsync(
+        await _botClient.SendMessage(
             message.Chat.Id,
             "Событие сохранено",
             cancellationToken: cancellationToken);
@@ -669,7 +669,7 @@ public sealed class MessageHandlers
         if (parts.Length < 2 || !int.TryParse(parts[1], out var eventId))
         {
             await _conversationRepository.DeleteAsync(state.UserId, cancellationToken);
-            await _botClient.SendTextMessageAsync(
+            await _botClient.SendMessage(
                 message.Chat.Id,
                 "Ошибка: неверный идентификатор события",
                 cancellationToken: cancellationToken);
@@ -681,7 +681,7 @@ public sealed class MessageHandlers
         if (eventEntity is null)
         {
             await _conversationRepository.DeleteAsync(state.UserId, cancellationToken);
-            await _botClient.SendTextMessageAsync(
+            await _botClient.SendMessage(
                 message.Chat.Id,
                 "Событие не найдено",
                 cancellationToken: cancellationToken);
@@ -698,7 +698,7 @@ public sealed class MessageHandlers
                     command = new UpdateEventCommand(eventId, "title", text, null, null, null, null, null, null, null, null);
                     await _updateEvent.ExecuteAsync(command, cancellationToken);
                     await _conversationRepository.DeleteAsync(state.UserId, cancellationToken);
-                    await _botClient.SendTextMessageAsync(
+                    await _botClient.SendMessage(
                         message.Chat.Id,
                         "Название обновлено",
                         cancellationToken: cancellationToken);
@@ -709,7 +709,7 @@ public sealed class MessageHandlers
                     command = new UpdateEventCommand(eventId, "description", null, description, null, null, null, null, null, null, null);
                     await _updateEvent.ExecuteAsync(command, cancellationToken);
                     await _conversationRepository.DeleteAsync(state.UserId, cancellationToken);
-                    await _botClient.SendTextMessageAsync(
+                    await _botClient.SendMessage(
                         message.Chat.Id,
                         "Описание обновлено",
                         cancellationToken: cancellationToken);
@@ -720,7 +720,7 @@ public sealed class MessageHandlers
                     command = new UpdateEventCommand(eventId, "place", null, null, place, null, null, null, null, null, null);
                     await _updateEvent.ExecuteAsync(command, cancellationToken);
                     await _conversationRepository.DeleteAsync(state.UserId, cancellationToken);
-                    await _botClient.SendTextMessageAsync(
+                    await _botClient.SendMessage(
                         message.Chat.Id,
                         "Место обновлено",
                         cancellationToken: cancellationToken);
@@ -731,7 +731,7 @@ public sealed class MessageHandlers
                     command = new UpdateEventCommand(eventId, "link", null, null, null, link, null, null, null, null, null);
                     await _updateEvent.ExecuteAsync(command, cancellationToken);
                     await _conversationRepository.DeleteAsync(state.UserId, cancellationToken);
-                    await _botClient.SendTextMessageAsync(
+                    await _botClient.SendMessage(
                         message.Chat.Id,
                         "Ссылка обновлена",
                         cancellationToken: cancellationToken);
@@ -740,7 +740,7 @@ public sealed class MessageHandlers
                 case "date":
                     if (!_dateTimeParser.TryParse(text, out var parseResult) || parseResult is null)
                     {
-                        await _botClient.SendTextMessageAsync(
+                        await _botClient.SendMessage(
                             message.Chat.Id,
                             "Не удалось распознать дату. Формат: 7 января 2026 или 2026-01-07",
                             cancellationToken: cancellationToken);
@@ -765,7 +765,7 @@ public sealed class MessageHandlers
                         var now = _clock.UtcNow;
                         state.Update($"{EventEditConversationSteps.AllDay}:{eventId}", SerializeEventEditData(data), now);
                         await _conversationRepository.UpsertAsync(state, cancellationToken);
-                        await _botClient.SendTextMessageAsync(
+                        await _botClient.SendMessage(
                             message.Chat.Id,
                             "Это событие на весь день? (да/нет)",
                             cancellationToken: cancellationToken);
@@ -784,7 +784,7 @@ public sealed class MessageHandlers
                         var now = _clock.UtcNow;
                         state.Update($"{EventEditConversationSteps.Time}:{eventId}", SerializeEventEditData(data), now);
                         await _conversationRepository.UpsertAsync(state, cancellationToken);
-                        await _botClient.SendTextMessageAsync(
+                        await _botClient.SendMessage(
                             message.Chat.Id,
                             "Введите время (HH:mm)",
                             cancellationToken: cancellationToken);
@@ -799,7 +799,7 @@ public sealed class MessageHandlers
                     if (!_dateTimeParser.TryParse(text, out var timeResult) || timeResult is null ||
                         !timeResult.Hour.HasValue || !timeResult.Minute.HasValue)
                     {
-                        await _botClient.SendTextMessageAsync(
+                        await _botClient.SendMessage(
                             message.Chat.Id,
                             "Не удалось распознать время. Формат: HH:mm",
                             cancellationToken: cancellationToken);
@@ -814,7 +814,7 @@ public sealed class MessageHandlers
 
                 default:
                     await _conversationRepository.DeleteAsync(state.UserId, cancellationToken);
-                    await _botClient.SendTextMessageAsync(
+                    await _botClient.SendMessage(
                         message.Chat.Id,
                         "Неизвестное поле для редактирования",
                         cancellationToken: cancellationToken);
@@ -823,7 +823,7 @@ public sealed class MessageHandlers
         }
         catch (Exception ex)
         {
-            await _botClient.SendTextMessageAsync(
+            await _botClient.SendMessage(
                 message.Chat.Id,
                 $"Ошибка при обновлении: {ex.Message}",
                 cancellationToken: cancellationToken);
@@ -908,7 +908,7 @@ public sealed class MessageHandlers
         }
 
         await _conversationRepository.DeleteAsync(userId, cancellationToken);
-        await _botClient.SendTextMessageAsync(
+        await _botClient.SendMessage(
             chatId,
             "Дата обновлена",
             cancellationToken: cancellationToken);
@@ -926,7 +926,7 @@ public sealed class MessageHandlers
         if (parts.Length < 2 || !int.TryParse(parts[1], out var birthdayId))
         {
             await _conversationRepository.DeleteAsync(state.UserId, cancellationToken);
-            await _botClient.SendTextMessageAsync(
+            await _botClient.SendMessage(
                 message.Chat.Id,
                 "Ошибка: неверный идентификатор дня рождения",
                 cancellationToken: cancellationToken);
@@ -938,7 +938,7 @@ public sealed class MessageHandlers
         if (birthday is null)
         {
             await _conversationRepository.DeleteAsync(state.UserId, cancellationToken);
-            await _botClient.SendTextMessageAsync(
+            await _botClient.SendMessage(
                 message.Chat.Id,
                 "День рождения не найден",
                 cancellationToken: cancellationToken);
@@ -955,7 +955,7 @@ public sealed class MessageHandlers
                     command = new UpdateBirthdayCommand(birthdayId, "personName", text, null, null, null, null);
                     await _updateBirthday.ExecuteAsync(command, cancellationToken);
                     await _conversationRepository.DeleteAsync(state.UserId, cancellationToken);
-                    await _botClient.SendTextMessageAsync(
+                    await _botClient.SendMessage(
                         message.Chat.Id,
                         "Имя обновлено",
                         cancellationToken: cancellationToken);
@@ -964,7 +964,7 @@ public sealed class MessageHandlers
                 case "date":
                     if (!_birthdayDateParser.TryParseMonthDay(text, out var day, out var month))
                     {
-                        await _botClient.SendTextMessageAsync(
+                        await _botClient.SendMessage(
                             message.Chat.Id,
                             "Не удалось распознать дату. Формат: 7 января",
                             cancellationToken: cancellationToken);
@@ -974,7 +974,7 @@ public sealed class MessageHandlers
                     command = new UpdateBirthdayCommand(birthdayId, "date", null, day, month, null, null);
                     await _updateBirthday.ExecuteAsync(command, cancellationToken);
                     await _conversationRepository.DeleteAsync(state.UserId, cancellationToken);
-                    await _botClient.SendTextMessageAsync(
+                    await _botClient.SendMessage(
                         message.Chat.Id,
                         "Дата обновлена",
                         cancellationToken: cancellationToken);
@@ -990,7 +990,7 @@ public sealed class MessageHandlers
                     command = new UpdateBirthdayCommand(birthdayId, "birthYear", null, null, null, birthYear, null);
                     await _updateBirthday.ExecuteAsync(command, cancellationToken);
                     await _conversationRepository.DeleteAsync(state.UserId, cancellationToken);
-                    await _botClient.SendTextMessageAsync(
+                    await _botClient.SendMessage(
                         message.Chat.Id,
                         "Год рождения обновлён",
                         cancellationToken: cancellationToken);
@@ -1001,7 +1001,7 @@ public sealed class MessageHandlers
                     command = new UpdateBirthdayCommand(birthdayId, "contact", null, null, null, null, contact);
                     await _updateBirthday.ExecuteAsync(command, cancellationToken);
                     await _conversationRepository.DeleteAsync(state.UserId, cancellationToken);
-                    await _botClient.SendTextMessageAsync(
+                    await _botClient.SendMessage(
                         message.Chat.Id,
                         "Контакт обновлён",
                         cancellationToken: cancellationToken);
@@ -1009,7 +1009,7 @@ public sealed class MessageHandlers
 
                 default:
                     await _conversationRepository.DeleteAsync(state.UserId, cancellationToken);
-                    await _botClient.SendTextMessageAsync(
+                    await _botClient.SendMessage(
                         message.Chat.Id,
                         "Неизвестное поле для редактирования",
                         cancellationToken: cancellationToken);
@@ -1018,15 +1018,15 @@ public sealed class MessageHandlers
         }
         catch (InvalidOperationException ex)
         {
-            await _botClient.SendTextMessageAsync(
+            await _botClient.SendMessage(
                 message.Chat.Id,
                 $"Ошибка: {ex.Message}",
                 cancellationToken: cancellationToken);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             await _conversationRepository.DeleteAsync(state.UserId, cancellationToken);
-            await _botClient.SendTextMessageAsync(
+            await _botClient.SendMessage(
                 message.Chat.Id,
                 "Произошла ошибка при обновлении. Попробуйте позже.",
                 cancellationToken: cancellationToken);

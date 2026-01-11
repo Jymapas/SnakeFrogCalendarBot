@@ -2,6 +2,7 @@ using SnakeFrogCalendarBot.Application.Abstractions.Persistence;
 using SnakeFrogCalendarBot.Application.Abstractions.Time;
 using SnakeFrogCalendarBot.Application.UseCases.Birthdays;
 using SnakeFrogCalendarBot.Application.UseCases.Events;
+using SnakeFrogCalendarBot.Domain.Entities;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.ReplyMarkups;
@@ -57,7 +58,7 @@ public sealed class CallbackHandlers
             var eventIdStr = data.Contains(':') ? data.Split(':')[1] : null;
             if (!int.TryParse(eventIdStr, out var eventId))
             {
-                await _botClient.AnswerCallbackQueryAsync(
+                await _botClient.AnswerCallbackQuery(
                     callbackQuery.Id,
                     "Ошибка: неверный идентификатор события",
                     cancellationToken: cancellationToken);
@@ -67,7 +68,7 @@ public sealed class CallbackHandlers
             var eventWithAttachment = await _getEventWithAttachment.ExecuteAsync(eventId, cancellationToken);
             if (eventWithAttachment is null)
             {
-                await _botClient.AnswerCallbackQueryAsync(
+                await _botClient.AnswerCallbackQuery(
                     callbackQuery.Id,
                     "Событие не найдено",
                     cancellationToken: cancellationToken);
@@ -76,7 +77,7 @@ public sealed class CallbackHandlers
 
             if (isReplace && eventWithAttachment.Attachments.Count == 0)
             {
-                await _botClient.AnswerCallbackQueryAsync(
+                await _botClient.AnswerCallbackQuery(
                     callbackQuery.Id,
                     "Нет файлов для замены",
                     cancellationToken: cancellationToken);
@@ -94,7 +95,7 @@ public sealed class CallbackHandlers
 
             await _conversationRepository.UpsertAsync(state, cancellationToken);
 
-            await _botClient.AnswerCallbackQueryAsync(
+            await _botClient.AnswerCallbackQuery(
                 callbackQuery.Id,
                 cancellationToken: cancellationToken);
 
@@ -104,7 +105,7 @@ public sealed class CallbackHandlers
                     ? $"Отправьте файл для добавления к событию (уже прикреплено файлов: {eventWithAttachment.Attachments.Count})"
                     : "Отправьте файл, который нужно прикрепить к событию";
 
-            await _botClient.SendTextMessageAsync(
+            await _botClient.SendMessage(
                 callbackQuery.Message!.Chat.Id,
                 messageText,
                 cancellationToken: cancellationToken);
@@ -151,10 +152,10 @@ public sealed class CallbackHandlers
         }
 
         await _conversationRepository.DeleteAsync(userId, cancellationToken);
-        await _botClient.AnswerCallbackQueryAsync(
+        await _botClient.AnswerCallbackQuery(
             callbackQuery.Id,
             cancellationToken: cancellationToken);
-        await _botClient.SendTextMessageAsync(
+        await _botClient.SendMessage(
             callbackQuery.Message!.Chat.Id,
             "Действие отменено",
             cancellationToken: cancellationToken);
@@ -165,7 +166,7 @@ public sealed class CallbackHandlers
         var eventIdStr = callbackQuery.Data!.Split(':')[1];
         if (!int.TryParse(eventIdStr, out var eventId))
         {
-            await _botClient.AnswerCallbackQueryAsync(
+            await _botClient.AnswerCallbackQuery(
                 callbackQuery.Id,
                 "Ошибка: неверный идентификатор события",
                 cancellationToken: cancellationToken);
@@ -175,21 +176,21 @@ public sealed class CallbackHandlers
         var eventEntity = await _eventRepository.GetByIdAsync(eventId, cancellationToken);
         if (eventEntity is null)
         {
-            await _botClient.AnswerCallbackQueryAsync(
+            await _botClient.AnswerCallbackQuery(
                 callbackQuery.Id,
                 "Событие не найдено",
                 cancellationToken: cancellationToken);
             return;
         }
 
-        await _botClient.AnswerCallbackQueryAsync(
+        await _botClient.AnswerCallbackQuery(
             callbackQuery.Id,
             cancellationToken: cancellationToken);
 
         var keyboard = CreateEventEditKeyboard(eventId);
         var text = $"Редактирование события: {eventEntity.Title}\n\nВыберите поле для редактирования:";
 
-        await _botClient.SendTextMessageAsync(
+        await _botClient.SendMessage(
             callbackQuery.Message!.Chat.Id,
             text,
             replyMarkup: keyboard,
@@ -201,7 +202,7 @@ public sealed class CallbackHandlers
         var parts = callbackQuery.Data!.Split(':');
         if (parts.Length < 3 || !int.TryParse(parts[1], out var eventId))
         {
-            await _botClient.AnswerCallbackQueryAsync(
+            await _botClient.AnswerCallbackQuery(
                 callbackQuery.Id,
                 "Ошибка: неверный формат данных",
                 cancellationToken: cancellationToken);
@@ -212,14 +213,14 @@ public sealed class CallbackHandlers
         var eventEntity = await _eventRepository.GetByIdAsync(eventId, cancellationToken);
         if (eventEntity is null)
         {
-            await _botClient.AnswerCallbackQueryAsync(
+            await _botClient.AnswerCallbackQuery(
                 callbackQuery.Id,
                 "Событие не найдено",
                 cancellationToken: cancellationToken);
             return;
         }
 
-        await _botClient.AnswerCallbackQueryAsync(
+        await _botClient.AnswerCallbackQuery(
             callbackQuery.Id,
             cancellationToken: cancellationToken);
 
@@ -245,7 +246,7 @@ public sealed class CallbackHandlers
             _ => "Введите новое значение:"
         };
 
-        await _botClient.SendTextMessageAsync(
+        await _botClient.SendMessage(
             callbackQuery.Message!.Chat.Id,
             messageText,
             cancellationToken: cancellationToken);
@@ -256,7 +257,7 @@ public sealed class CallbackHandlers
         var eventIdStr = callbackQuery.Data!.Split(':')[1];
         if (!int.TryParse(eventIdStr, out var eventId))
         {
-            await _botClient.AnswerCallbackQueryAsync(
+            await _botClient.AnswerCallbackQuery(
                 callbackQuery.Id,
                 "Ошибка: неверный идентификатор события",
                 cancellationToken: cancellationToken);
@@ -266,14 +267,14 @@ public sealed class CallbackHandlers
         var eventEntity = await _eventRepository.GetByIdAsync(eventId, cancellationToken);
         if (eventEntity is null)
         {
-            await _botClient.AnswerCallbackQueryAsync(
+            await _botClient.AnswerCallbackQuery(
                 callbackQuery.Id,
                 "Событие не найдено",
                 cancellationToken: cancellationToken);
             return;
         }
 
-        await _botClient.AnswerCallbackQueryAsync(
+        await _botClient.AnswerCallbackQuery(
             callbackQuery.Id,
             cancellationToken: cancellationToken);
 
@@ -286,7 +287,7 @@ public sealed class CallbackHandlers
             }
         });
 
-        await _botClient.SendTextMessageAsync(
+        await _botClient.SendMessage(
             callbackQuery.Message!.Chat.Id,
             $"Вы действительно хотите удалить событие «{eventEntity.Title}»?",
             replyMarkup: keyboard,
@@ -298,7 +299,7 @@ public sealed class CallbackHandlers
         var birthdayIdStr = callbackQuery.Data!.Split(':')[1];
         if (!int.TryParse(birthdayIdStr, out var birthdayId))
         {
-            await _botClient.AnswerCallbackQueryAsync(
+            await _botClient.AnswerCallbackQuery(
                 callbackQuery.Id,
                 "Ошибка: неверный идентификатор дня рождения",
                 cancellationToken: cancellationToken);
@@ -308,21 +309,21 @@ public sealed class CallbackHandlers
         var birthday = await _birthdayRepository.GetByIdAsync(birthdayId, cancellationToken);
         if (birthday is null)
         {
-            await _botClient.AnswerCallbackQueryAsync(
+            await _botClient.AnswerCallbackQuery(
                 callbackQuery.Id,
                 "День рождения не найден",
                 cancellationToken: cancellationToken);
             return;
         }
 
-        await _botClient.AnswerCallbackQueryAsync(
+        await _botClient.AnswerCallbackQuery(
             callbackQuery.Id,
             cancellationToken: cancellationToken);
 
         var keyboard = CreateBirthdayEditKeyboard(birthdayId);
         var text = $"Редактирование дня рождения: {birthday.PersonName}\n\nВыберите поле для редактирования:";
 
-        await _botClient.SendTextMessageAsync(
+        await _botClient.SendMessage(
             callbackQuery.Message!.Chat.Id,
             text,
             replyMarkup: keyboard,
@@ -334,7 +335,7 @@ public sealed class CallbackHandlers
         var parts = callbackQuery.Data!.Split(':');
         if (parts.Length < 3 || !int.TryParse(parts[1], out var birthdayId))
         {
-            await _botClient.AnswerCallbackQueryAsync(
+            await _botClient.AnswerCallbackQuery(
                 callbackQuery.Id,
                 "Ошибка: неверный формат данных",
                 cancellationToken: cancellationToken);
@@ -345,14 +346,14 @@ public sealed class CallbackHandlers
         var birthday = await _birthdayRepository.GetByIdAsync(birthdayId, cancellationToken);
         if (birthday is null)
         {
-            await _botClient.AnswerCallbackQueryAsync(
+            await _botClient.AnswerCallbackQuery(
                 callbackQuery.Id,
                 "День рождения не найден",
                 cancellationToken: cancellationToken);
             return;
         }
 
-        await _botClient.AnswerCallbackQueryAsync(
+        await _botClient.AnswerCallbackQuery(
             callbackQuery.Id,
             cancellationToken: cancellationToken);
 
@@ -375,7 +376,7 @@ public sealed class CallbackHandlers
             _ => "Введите новое значение:"
         };
 
-        await _botClient.SendTextMessageAsync(
+        await _botClient.SendMessage(
             callbackQuery.Message!.Chat.Id,
             messageText,
             cancellationToken: cancellationToken);
@@ -386,7 +387,7 @@ public sealed class CallbackHandlers
         var birthdayIdStr = callbackQuery.Data!.Split(':')[1];
         if (!int.TryParse(birthdayIdStr, out var birthdayId))
         {
-            await _botClient.AnswerCallbackQueryAsync(
+            await _botClient.AnswerCallbackQuery(
                 callbackQuery.Id,
                 "Ошибка: неверный идентификатор дня рождения",
                 cancellationToken: cancellationToken);
@@ -396,14 +397,14 @@ public sealed class CallbackHandlers
         var birthday = await _birthdayRepository.GetByIdAsync(birthdayId, cancellationToken);
         if (birthday is null)
         {
-            await _botClient.AnswerCallbackQueryAsync(
+            await _botClient.AnswerCallbackQuery(
                 callbackQuery.Id,
                 "День рождения не найден",
                 cancellationToken: cancellationToken);
             return;
         }
 
-        await _botClient.AnswerCallbackQueryAsync(
+        await _botClient.AnswerCallbackQuery(
             callbackQuery.Id,
             cancellationToken: cancellationToken);
 
@@ -416,7 +417,7 @@ public sealed class CallbackHandlers
             }
         });
 
-        await _botClient.SendTextMessageAsync(
+        await _botClient.SendMessage(
             callbackQuery.Message!.Chat.Id,
             $"Вы действительно хотите удалить день рождения «{birthday.PersonName}»?",
             replyMarkup: keyboard,
@@ -425,14 +426,14 @@ public sealed class CallbackHandlers
 
     private async Task HandleDeleteConfirmationAsync(CallbackQuery callbackQuery, CancellationToken cancellationToken)
     {
-        await _botClient.AnswerCallbackQueryAsync(
+        await _botClient.AnswerCallbackQuery(
             callbackQuery.Id,
             cancellationToken: cancellationToken);
 
         var parts = callbackQuery.Data!.Split(':');
         if (parts.Length < 3)
         {
-            await _botClient.SendTextMessageAsync(
+            await _botClient.SendMessage(
                 callbackQuery.Message!.Chat.Id,
                 "Ошибка: неверный формат данных",
                 cancellationToken: cancellationToken);
@@ -442,7 +443,7 @@ public sealed class CallbackHandlers
         var entityType = parts[1];
         if (!int.TryParse(parts[2], out var entityId))
         {
-            await _botClient.SendTextMessageAsync(
+            await _botClient.SendMessage(
                 callbackQuery.Message!.Chat.Id,
                 "Ошибка: неверный идентификатор",
                 cancellationToken: cancellationToken);
@@ -454,7 +455,7 @@ public sealed class CallbackHandlers
             if (entityType == "event")
             {
                 await _deleteEvent.ExecuteAsync(entityId, cancellationToken);
-                await _botClient.SendTextMessageAsync(
+                await _botClient.SendMessage(
                     callbackQuery.Message!.Chat.Id,
                     "Событие удалено",
                     cancellationToken: cancellationToken);
@@ -462,7 +463,7 @@ public sealed class CallbackHandlers
             else if (entityType == "birthday")
             {
                 await _deleteBirthday.ExecuteAsync(entityId, cancellationToken);
-                await _botClient.SendTextMessageAsync(
+                await _botClient.SendMessage(
                     callbackQuery.Message!.Chat.Id,
                     "День рождения удалён",
                     cancellationToken: cancellationToken);
@@ -470,14 +471,14 @@ public sealed class CallbackHandlers
         }
         catch (InvalidOperationException ex)
         {
-            await _botClient.SendTextMessageAsync(
+            await _botClient.SendMessage(
                 callbackQuery.Message!.Chat.Id,
                 $"Ошибка: {ex.Message}",
                 cancellationToken: cancellationToken);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            await _botClient.SendTextMessageAsync(
+            await _botClient.SendMessage(
                 callbackQuery.Message!.Chat.Id,
                 "Произошла ошибка при удалении. Попробуйте позже.",
                 cancellationToken: cancellationToken);

@@ -42,7 +42,7 @@ public sealed class UpdateDispatcher
 
         if (!_accessGuard.IsAllowed(userId.Value))
         {
-            await botClient.SendTextMessageAsync(
+            await botClient.SendMessage(
                 message.Chat.Id,
                 "У вас нет доступа к этому боту",
                 cancellationToken: cancellationToken);
@@ -76,7 +76,7 @@ public sealed class UpdateDispatcher
 
         if (!_accessGuard.IsAllowed(userId.Value))
         {
-            await botClient.AnswerCallbackQueryAsync(
+            await botClient.AnswerCallbackQuery(
                 callbackQuery.Id,
                 "У вас нет доступа к этому боту",
                 cancellationToken: cancellationToken);
