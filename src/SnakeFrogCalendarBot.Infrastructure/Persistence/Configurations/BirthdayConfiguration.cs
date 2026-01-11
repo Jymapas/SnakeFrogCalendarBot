@@ -11,29 +11,38 @@ public sealed class BirthdayConfiguration : IEntityTypeConfiguration<Birthday>
         builder.ToTable("birthdays");
 
         builder.HasKey(birthday => birthday.Id);
+        builder.Property(birthday => birthday.Id)
+            .HasColumnName("id");
 
         builder.Property(birthday => birthday.PersonName)
             .IsRequired()
-            .HasMaxLength(200);
+            .HasMaxLength(200)
+            .HasColumnName("person_name");
 
         builder.Property(birthday => birthday.Day)
-            .IsRequired();
+            .IsRequired()
+            .HasColumnName("day");
 
         builder.Property(birthday => birthday.Month)
-            .IsRequired();
+            .IsRequired()
+            .HasColumnName("month");
 
-        builder.Property(birthday => birthday.BirthYear);
+        builder.Property(birthday => birthday.BirthYear)
+            .HasColumnName("birth_year");
 
         builder.Property(birthday => birthday.Contact)
-            .HasMaxLength(200);
+            .HasMaxLength(200)
+            .HasColumnName("contact");
 
         builder.Property(birthday => birthday.CreatedAtUtc)
             .IsRequired()
-            .HasColumnType("timestamp with time zone");
+            .HasColumnType("timestamp with time zone")
+            .HasColumnName("created_at_utc");
 
         builder.Property(birthday => birthday.UpdatedAtUtc)
             .IsRequired()
-            .HasColumnType("timestamp with time zone");
+            .HasColumnType("timestamp with time zone")
+            .HasColumnName("updated_at_utc");
 
         builder.HasIndex(birthday => new { birthday.Month, birthday.Day });
     }
