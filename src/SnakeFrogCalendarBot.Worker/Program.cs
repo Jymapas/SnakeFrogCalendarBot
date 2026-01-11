@@ -25,6 +25,7 @@ using SnakeFrogCalendarBot.Worker.Telegram;
 using SnakeFrogCalendarBot.Worker.Telegram.Handlers;
 using Telegram.Bot;
 using Npgsql.EntityFrameworkCore.PostgreSQL;
+using Npgsql.EntityFrameworkCore.PostgreSQL.Extensions;
 
 Log.Logger = SerilogSetup.CreateLogger();
 

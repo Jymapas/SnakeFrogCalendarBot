@@ -4,6 +4,7 @@ using SnakeFrogCalendarBot.Application.Abstractions.Time;
 using SnakeFrogCalendarBot.Domain.Entities;
 using SnakeFrogCalendarBot.Domain.Enums;
 using NodaTime;
+using IClock = SnakeFrogCalendarBot.Application.Abstractions.Time.IClock;
 
 namespace SnakeFrogCalendarBot.Infrastructure.Persistence.Repositories;
 
@@ -57,7 +58,7 @@ public sealed class EventRepository : IEventRepository
 
                 var localDateTime = e.IsAllDay
                     ? nextOccurrence.AtMidnight()
-                    : nextOccurrence.At(e.TimeOfDay ?? LocalTime.Midnight);
+                    : nextOccurrence.At(e.TimeOfDay.HasValue ? LocalTime.FromTicksSinceMidnight(e.TimeOfDay.Value.Ticks) : LocalTime.Midnight);
 
                 var zonedDateTime = localDateTime.InZoneLeniently(timeZone);
                 var instant = zonedDateTime.ToInstant();
@@ -85,7 +86,7 @@ public sealed class EventRepository : IEventRepository
 
                 var localDateTime = e.IsAllDay
                     ? nextOccurrence.AtMidnight()
-                    : nextOccurrence.At(e.TimeOfDay ?? LocalTime.Midnight);
+                    : nextOccurrence.At(e.TimeOfDay.HasValue ? LocalTime.FromTicksSinceMidnight(e.TimeOfDay.Value.Ticks) : LocalTime.Midnight);
 
                 var zonedDateTime = localDateTime.InZoneLeniently(timeZone);
                 var instant = zonedDateTime.ToInstant();
@@ -111,7 +112,6 @@ public sealed class EventRepository : IEventRepository
     public async Task DeleteAsync(int id, CancellationToken cancellationToken)
     {
         var eventEntity = await _dbContext.Events
-            .Include(e => e.Attachments)
             .FirstOrDefaultAsync(e => e.Id == id, cancellationToken);
 
         if (eventEntity is not null)

@@ -7,6 +7,7 @@ using SnakeFrogCalendarBot.Application.UseCases.Notifications;
 using SnakeFrogCalendarBot.Domain.Entities;
 using SnakeFrogCalendarBot.Domain.Enums;
 using NodaTime;
+using IClock = SnakeFrogCalendarBot.Application.Abstractions.Time.IClock;
 
 namespace SnakeFrogCalendarBot.Infrastructure.Jobs;
 
@@ -47,7 +48,7 @@ public sealed class DailyDigestJob : IJob
         {
             var result = await _buildDailyDigest.ExecuteAsync(context.CancellationToken);
 
-            var periodStartLocal = result.Date.AtStartOfDay().ToDateTimeUnspecified();
+            var periodStartLocal = result.Date.AtMidnight().ToDateTimeUnspecified();
             var periodEndLocal = result.Date.At(LocalTime.MaxValue).ToDateTimeUnspecified();
 
             var exists = await _notificationRunRepository.ExistsAsync(
