@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using SnakeFrogCalendarBot.Infrastructure.Persistence;
 
 #nullable disable
@@ -16,7 +18,7 @@ partial class CalendarDbContextModelSnapshot : ModelSnapshot
             .HasAnnotation("ProductVersion", "9.0.4")
             .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
-        Npgsql.EntityFrameworkCore.PostgreSQL.Metadata.NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
+        NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
         modelBuilder.Entity("SnakeFrogCalendarBot.Domain.Entities.Birthday", b =>
         {
@@ -24,7 +26,7 @@ partial class CalendarDbContextModelSnapshot : ModelSnapshot
                 .ValueGeneratedOnAdd()
                 .HasColumnType("integer");
 
-            Npgsql.EntityFrameworkCore.PostgreSQL.Metadata.NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+            NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
             b.Property<int>("BirthYear")
                 .HasColumnType("integer");
