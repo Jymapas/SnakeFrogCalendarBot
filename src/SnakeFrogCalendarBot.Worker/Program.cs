@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Npgsql;
 using Quartz;
 using Serilog;
 using SnakeFrogCalendarBot.Application.Abstractions.Parsing;
@@ -124,6 +125,34 @@ try
     using (var scope = host.Services.CreateScope())
     {
         var dbContext = scope.ServiceProvider.GetRequiredService<CalendarDbContext>();
+        var options = scope.ServiceProvider.GetRequiredService<AppOptions>();
+        
+        try
+        {
+            await dbContext.Database.CanConnectAsync();
+        }
+        catch
+        {
+            var connectionStringBuilder = new NpgsqlConnectionStringBuilder(options.PostgresConnectionString);
+            var databaseName = connectionStringBuilder.Database;
+            connectionStringBuilder.Database = "postgres";
+
+            await using (var tempConnection = new NpgsqlConnection(connectionStringBuilder.ConnectionString))
+            {
+                await tempConnection.OpenAsync();
+                var command = tempConnection.CreateCommand();
+                command.CommandText = $"SELECT 1 FROM pg_database WHERE datname = '{databaseName}'";
+                var exists = await command.ExecuteScalarAsync() != null;
+
+                if (!exists)
+                {
+                    command.CommandText = $"CREATE DATABASE \"{databaseName}\"";
+                    await command.ExecuteNonQueryAsync();
+                    Log.Information("Database {DatabaseName} created", databaseName);
+                }
+            }
+        }
+
         await dbContext.Database.MigrateAsync();
     }
 
