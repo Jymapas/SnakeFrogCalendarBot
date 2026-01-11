@@ -49,8 +49,7 @@ try
             services.AddDbContext<CalendarDbContext>(db =>
                 db.UseNpgsql(
                         options.PostgresConnectionString,
-                        npgsql => npgsql.MigrationsAssembly(typeof(CalendarDbContext).Assembly.FullName))
-                    .UseSnakeCaseNamingConvention());
+                        npgsql => npgsql.MigrationsAssembly(typeof(CalendarDbContext).Assembly.FullName)));
 
             services.AddScoped<IBirthdayRepository, BirthdayRepository>();
             services.AddScoped<IEventRepository, EventRepository>();

@@ -10,6 +10,7 @@ using SnakeFrogCalendarBot.Domain.Entities;
 using SnakeFrogCalendarBot.Domain.Enums;
 using Telegram.Bot;
 using Telegram.Bot.Types;
+using IClock = SnakeFrogCalendarBot.Application.Abstractions.Time.IClock;
 
 namespace SnakeFrogCalendarBot.Worker.Telegram.Handlers;
 

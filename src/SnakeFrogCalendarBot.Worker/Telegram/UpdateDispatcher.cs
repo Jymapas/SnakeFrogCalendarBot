@@ -65,7 +65,7 @@ public sealed class UpdateDispatcher
 
     private async Task HandleCallbackQueryAsync(
         ITelegramBotClient botClient,
-        Telegram.Bot.Types.CallbackQuery callbackQuery,
+        CallbackQuery callbackQuery,
         CancellationToken cancellationToken)
     {
         var userId = callbackQuery.From?.Id;
