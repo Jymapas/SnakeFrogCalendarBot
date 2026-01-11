@@ -27,6 +27,24 @@ using SnakeFrogCalendarBot.Worker.Telegram.Handlers;
 using Telegram.Bot;
 using Npgsql.EntityFrameworkCore.PostgreSQL;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Extensions;
+using DotNetEnv;
+
+var currentDir = Directory.GetCurrentDirectory();
+var envPath = Path.Combine(currentDir, ".env");
+if (!File.Exists(envPath))
+{
+    var projectRoot = Path.Combine(currentDir, "..", "..", "..", "..");
+    var projectRootEnv = Path.GetFullPath(Path.Combine(projectRoot, ".env"));
+    if (File.Exists(projectRootEnv))
+    {
+        envPath = projectRootEnv;
+    }
+}
+
+if (File.Exists(envPath))
+{
+    Env.Load(envPath);
+}
 
 Log.Logger = SerilogSetup.CreateLogger();
 

@@ -2,12 +2,13 @@ using NodaTime;
 using SnakeFrogCalendarBot.Application.Abstractions.Persistence;
 using SnakeFrogCalendarBot.Application.Abstractions.Time;
 using SnakeFrogCalendarBot.Application.UseCases.Notifications;
+using AppClock = SnakeFrogCalendarBot.Application.Abstractions.Time.IClock;
 
 namespace SnakeFrogCalendarBot.Tests.Notifications;
 
 public sealed class PeriodCalculationTests
 {
-    private sealed class TestClock : IClock
+    private sealed class TestClock : AppClock
     {
         private readonly DateTime _utcNow;
 
