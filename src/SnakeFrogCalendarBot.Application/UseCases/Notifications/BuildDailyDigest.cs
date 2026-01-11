@@ -4,6 +4,7 @@ using SnakeFrogCalendarBot.Application.Abstractions.Time;
 using SnakeFrogCalendarBot.Application.Dto;
 using SnakeFrogCalendarBot.Domain.Entities;
 using SnakeFrogCalendarBot.Domain.Enums;
+using AppClock = SnakeFrogCalendarBot.Application.Abstractions.Time.IClock;
 
 namespace SnakeFrogCalendarBot.Application.UseCases.Notifications;
 
@@ -12,14 +13,14 @@ public sealed class BuildDailyDigest
     private readonly IEventRepository _eventRepository;
     private readonly IBirthdayRepository _birthdayRepository;
     private readonly IAttachmentRepository _attachmentRepository;
-    private readonly IClock _clock;
+    private readonly AppClock _clock;
     private readonly ITimeZoneProvider _timeZoneProvider;
 
     public BuildDailyDigest(
         IEventRepository eventRepository,
         IBirthdayRepository birthdayRepository,
         IAttachmentRepository attachmentRepository,
-        IClock clock,
+        AppClock clock,
         ITimeZoneProvider timeZoneProvider)
     {
         _eventRepository = eventRepository;
@@ -36,7 +37,7 @@ public sealed class BuildDailyDigest
         var nowInZone = Instant.FromDateTimeUtc(now).InZone(timeZone);
         var today = nowInZone.Date;
 
-        var periodStart = today.AtStartOfDay();
+        var periodStart = today.AtMidnight();
         var periodEnd = today.At(LocalTime.MaxValue);
 
         var items = await BuildItemsAsync(periodStart, periodEnd, timeZone, cancellationToken);
@@ -87,7 +88,7 @@ public sealed class BuildDailyDigest
             {
                 var eventDateTime = eventTime.HasValue
                     ? eventDate.Value.At(eventTime.Value)
-                    : eventDate.Value.AtStartOfDay();
+                    : eventDate.Value.AtMidnight();
                 var eventInstant = eventDateTime.InZoneLeniently(timeZone).ToInstant();
 
                 if (eventInstant >= periodStartInstant && eventInstant <= periodEndInstant)

@@ -10,4 +10,8 @@
     <ProjectReference Include="..\SnakeFrogCalendarBot.Domain\SnakeFrogCalendarBot.Domain.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="NodaTime" Version="3.3.0" />
+  </ItemGroup>
+
 </Project>
