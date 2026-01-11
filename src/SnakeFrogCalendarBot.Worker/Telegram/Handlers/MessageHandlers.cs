@@ -27,8 +27,12 @@ public sealed class MessageHandlers
     private readonly IDateTimeParser _dateTimeParser;
     private readonly CreateBirthday _createBirthday;
     private readonly CreateEvent _createEvent;
+    private readonly UpdateEvent _updateEvent;
+    private readonly UpdateBirthday _updateBirthday;
     private readonly AttachFileToEvent _attachFileToEvent;
     private readonly ReplaceEventFile _replaceEventFile;
+    private readonly IEventRepository _eventRepository;
+    private readonly IBirthdayRepository _birthdayRepository;
     private readonly IClock _clock;
     private readonly ITimeZoneProvider _timeZoneProvider;
 
@@ -39,8 +43,12 @@ public sealed class MessageHandlers
         IDateTimeParser dateTimeParser,
         CreateBirthday createBirthday,
         CreateEvent createEvent,
+        UpdateEvent updateEvent,
+        UpdateBirthday updateBirthday,
         AttachFileToEvent attachFileToEvent,
         ReplaceEventFile replaceEventFile,
+        IEventRepository eventRepository,
+        IBirthdayRepository birthdayRepository,
         IClock clock,
         ITimeZoneProvider timeZoneProvider)
     {
@@ -50,8 +58,12 @@ public sealed class MessageHandlers
         _dateTimeParser = dateTimeParser;
         _createBirthday = createBirthday;
         _createEvent = createEvent;
+        _updateEvent = updateEvent;
+        _updateBirthday = updateBirthday;
         _attachFileToEvent = attachFileToEvent;
         _replaceEventFile = replaceEventFile;
+        _eventRepository = eventRepository;
+        _birthdayRepository = birthdayRepository;
         _clock = clock;
         _timeZoneProvider = timeZoneProvider;
     }
@@ -96,9 +108,17 @@ public sealed class MessageHandlers
         {
             await HandleBirthdayAddAsync(message, state, cancellationToken);
         }
+        else if (string.Equals(state.ConversationName, ConversationNames.BirthdayEdit, StringComparison.OrdinalIgnoreCase))
+        {
+            await HandleBirthdayEditAsync(message, state, cancellationToken);
+        }
         else if (string.Equals(state.ConversationName, ConversationNames.EventAdd, StringComparison.OrdinalIgnoreCase))
         {
             await HandleEventAddAsync(message, state, cancellationToken);
+        }
+        else if (string.Equals(state.ConversationName, ConversationNames.EventEdit, StringComparison.OrdinalIgnoreCase))
+        {
+            await HandleEventEditAsync(message, state, cancellationToken);
         }
         else
         {
@@ -632,6 +652,398 @@ public sealed class MessageHandlers
     }
 
     private static string SerializeEventData(EventConversationData data)
+    {
+        return JsonSerializer.Serialize(data, JsonOptions);
+    }
+
+    private async Task HandleEventEditAsync(Message message, ConversationState state, CancellationToken cancellationToken)
+    {
+        var text = message.Text?.Trim();
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return;
+        }
+
+        var parts = state.Step.Split(':');
+        if (parts.Length < 2 || !int.TryParse(parts[1], out var eventId))
+        {
+            await _conversationRepository.DeleteAsync(state.UserId, cancellationToken);
+            await _botClient.SendTextMessageAsync(
+                message.Chat.Id,
+                "Ошибка: неверный идентификатор события",
+                cancellationToken: cancellationToken);
+            return;
+        }
+
+        var field = parts[0];
+        var eventEntity = await _eventRepository.GetByIdAsync(eventId, cancellationToken);
+        if (eventEntity is null)
+        {
+            await _conversationRepository.DeleteAsync(state.UserId, cancellationToken);
+            await _botClient.SendTextMessageAsync(
+                message.Chat.Id,
+                "Событие не найдено",
+                cancellationToken: cancellationToken);
+            return;
+        }
+
+        try
+        {
+            UpdateEventCommand command;
+
+            switch (field)
+            {
+                case "title":
+                    command = new UpdateEventCommand(eventId, "title", text, null, null, null, null, null, null, null, null);
+                    await _updateEvent.ExecuteAsync(command, cancellationToken);
+                    await _conversationRepository.DeleteAsync(state.UserId, cancellationToken);
+                    await _botClient.SendTextMessageAsync(
+                        message.Chat.Id,
+                        "Название обновлено",
+                        cancellationToken: cancellationToken);
+                    break;
+
+                case "description":
+                    var description = IsSkip(text) ? null : text;
+                    command = new UpdateEventCommand(eventId, "description", null, description, null, null, null, null, null, null, null);
+                    await _updateEvent.ExecuteAsync(command, cancellationToken);
+                    await _conversationRepository.DeleteAsync(state.UserId, cancellationToken);
+                    await _botClient.SendTextMessageAsync(
+                        message.Chat.Id,
+                        "Описание обновлено",
+                        cancellationToken: cancellationToken);
+                    break;
+
+                case "place":
+                    var place = IsSkip(text) ? null : text;
+                    command = new UpdateEventCommand(eventId, "place", null, null, place, null, null, null, null, null, null);
+                    await _updateEvent.ExecuteAsync(command, cancellationToken);
+                    await _conversationRepository.DeleteAsync(state.UserId, cancellationToken);
+                    await _botClient.SendTextMessageAsync(
+                        message.Chat.Id,
+                        "Место обновлено",
+                        cancellationToken: cancellationToken);
+                    break;
+
+                case "link":
+                    var link = IsSkip(text) ? null : text;
+                    command = new UpdateEventCommand(eventId, "link", null, null, null, link, null, null, null, null, null);
+                    await _updateEvent.ExecuteAsync(command, cancellationToken);
+                    await _conversationRepository.DeleteAsync(state.UserId, cancellationToken);
+                    await _botClient.SendTextMessageAsync(
+                        message.Chat.Id,
+                        "Ссылка обновлена",
+                        cancellationToken: cancellationToken);
+                    break;
+
+                case "date":
+                    if (!_dateTimeParser.TryParse(text, out var parseResult) || parseResult is null)
+                    {
+                        await _botClient.SendTextMessageAsync(
+                            message.Chat.Id,
+                            "Не удалось распознать дату. Формат: 7 января 2026 или 2026-01-07",
+                            cancellationToken: cancellationToken);
+                        return;
+                    }
+
+                    var data = DeserializeEventEditData(state.StateJson);
+                    data.EventId = eventId;
+                    data.Year = parseResult.Year;
+                    data.Month = parseResult.Month;
+                    data.Day = parseResult.Day;
+                    data.Hour = parseResult.Hour;
+                    data.Minute = parseResult.Minute;
+                    data.HasYear = parseResult.HasYear;
+
+                    if (parseResult.Hour.HasValue && parseResult.Minute.HasValue)
+                    {
+                        await UpdateEventDateAsync(eventId, data, message.Chat.Id, state.UserId, cancellationToken);
+                    }
+                    else
+                    {
+                        var now = _clock.UtcNow;
+                        state.Update($"{EventEditConversationSteps.AllDay}:{eventId}", SerializeEventEditData(data), now);
+                        await _conversationRepository.UpsertAsync(state, cancellationToken);
+                        await _botClient.SendTextMessageAsync(
+                            message.Chat.Id,
+                            "Это событие на весь день? (да/нет)",
+                            cancellationToken: cancellationToken);
+                    }
+                    break;
+
+                case "all-day":
+                    var isAllDay = text.Equals("да", StringComparison.OrdinalIgnoreCase) ||
+                                   text.Equals("yes", StringComparison.OrdinalIgnoreCase) ||
+                                   text.Equals("y", StringComparison.OrdinalIgnoreCase);
+                    data = DeserializeEventEditData(state.StateJson);
+                    data.IsAllDay = isAllDay;
+
+                    if (!isAllDay)
+                    {
+                        var now = _clock.UtcNow;
+                        state.Update($"{EventEditConversationSteps.Time}:{eventId}", SerializeEventEditData(data), now);
+                        await _conversationRepository.UpsertAsync(state, cancellationToken);
+                        await _botClient.SendTextMessageAsync(
+                            message.Chat.Id,
+                            "Введите время (HH:mm)",
+                            cancellationToken: cancellationToken);
+                    }
+                    else
+                    {
+                        await UpdateEventDateAsync(eventId, data, message.Chat.Id, state.UserId, cancellationToken);
+                    }
+                    break;
+
+                case "time":
+                    if (!_dateTimeParser.TryParse(text, out var timeResult) || timeResult is null ||
+                        !timeResult.Hour.HasValue || !timeResult.Minute.HasValue)
+                    {
+                        await _botClient.SendTextMessageAsync(
+                            message.Chat.Id,
+                            "Не удалось распознать время. Формат: HH:mm",
+                            cancellationToken: cancellationToken);
+                        return;
+                    }
+
+                    data = DeserializeEventEditData(state.StateJson);
+                    data.Hour = timeResult.Hour;
+                    data.Minute = timeResult.Minute;
+                    await UpdateEventDateAsync(eventId, data, message.Chat.Id, state.UserId, cancellationToken);
+                    break;
+
+                default:
+                    await _conversationRepository.DeleteAsync(state.UserId, cancellationToken);
+                    await _botClient.SendTextMessageAsync(
+                        message.Chat.Id,
+                        "Неизвестное поле для редактирования",
+                        cancellationToken: cancellationToken);
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            await _botClient.SendTextMessageAsync(
+                message.Chat.Id,
+                $"Ошибка при обновлении: {ex.Message}",
+                cancellationToken: cancellationToken);
+        }
+    }
+
+    private async Task UpdateEventDateAsync(int eventId, EventEditConversationData data, long chatId, long userId, CancellationToken cancellationToken)
+    {
+        var eventEntity = await _eventRepository.GetByIdAsync(eventId, cancellationToken);
+        if (eventEntity is null)
+        {
+            throw new InvalidOperationException("Event not found.");
+        }
+
+        if (eventEntity.Kind == EventKind.OneOff)
+        {
+            if (data.Year is null || data.Month is null || data.Day is null)
+            {
+                throw new InvalidOperationException("Year, Month and Day are required.");
+            }
+
+            var timeZone = DateTimeZoneProviders.Tzdb[_timeZoneProvider.GetTimeZoneId()];
+            var localDate = new LocalDate(data.Year.Value, data.Month.Value, data.Day.Value);
+            LocalDateTime localDateTime;
+
+            if (data.IsAllDay == true)
+            {
+                localDateTime = localDate.AtMidnight();
+            }
+            else
+            {
+                var time = data.Hour.HasValue && data.Minute.HasValue
+                    ? new LocalTime(data.Hour.Value, data.Minute.Value)
+                    : LocalTime.Midnight;
+                localDateTime = localDate.At(time);
+            }
+
+            var zonedDateTime = localDateTime.InZoneLeniently(timeZone);
+            var instant = zonedDateTime.ToInstant();
+            var occursAtUtc = instant.ToDateTimeOffset();
+
+            var command = new UpdateEventCommand(
+                eventId,
+                "occursAtUtc",
+                null,
+                null,
+                null,
+                null,
+                occursAtUtc,
+                null,
+                null,
+                null,
+                data.IsAllDay);
+            await _updateEvent.ExecuteAsync(command, cancellationToken);
+        }
+        else
+        {
+            if (data.Month is null || data.Day is null)
+            {
+                throw new InvalidOperationException("Month and Day are required.");
+            }
+
+            TimeSpan? timeOfDay = null;
+            if (data.IsAllDay != true && data.Hour.HasValue && data.Minute.HasValue)
+            {
+                timeOfDay = new TimeSpan(data.Hour.Value, data.Minute.Value, 0);
+            }
+
+            var command = new UpdateEventCommand(
+                eventId,
+                "yearlyDate",
+                null,
+                null,
+                null,
+                null,
+                null,
+                data.Month,
+                data.Day,
+                timeOfDay,
+                data.IsAllDay);
+            await _updateEvent.ExecuteAsync(command, cancellationToken);
+        }
+
+        await _conversationRepository.DeleteAsync(userId, cancellationToken);
+        await _botClient.SendTextMessageAsync(
+            chatId,
+            "Дата обновлена",
+            cancellationToken: cancellationToken);
+    }
+
+    private async Task HandleBirthdayEditAsync(Message message, ConversationState state, CancellationToken cancellationToken)
+    {
+        var text = message.Text?.Trim();
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return;
+        }
+
+        var parts = state.Step.Split(':');
+        if (parts.Length < 2 || !int.TryParse(parts[1], out var birthdayId))
+        {
+            await _conversationRepository.DeleteAsync(state.UserId, cancellationToken);
+            await _botClient.SendTextMessageAsync(
+                message.Chat.Id,
+                "Ошибка: неверный идентификатор дня рождения",
+                cancellationToken: cancellationToken);
+            return;
+        }
+
+        var field = parts[0];
+        var birthday = await _birthdayRepository.GetByIdAsync(birthdayId, cancellationToken);
+        if (birthday is null)
+        {
+            await _conversationRepository.DeleteAsync(state.UserId, cancellationToken);
+            await _botClient.SendTextMessageAsync(
+                message.Chat.Id,
+                "День рождения не найден",
+                cancellationToken: cancellationToken);
+            return;
+        }
+
+        try
+        {
+            UpdateBirthdayCommand command;
+
+            switch (field)
+            {
+                case "personName":
+                    command = new UpdateBirthdayCommand(birthdayId, "personName", text, null, null, null, null);
+                    await _updateBirthday.ExecuteAsync(command, cancellationToken);
+                    await _conversationRepository.DeleteAsync(state.UserId, cancellationToken);
+                    await _botClient.SendTextMessageAsync(
+                        message.Chat.Id,
+                        "Имя обновлено",
+                        cancellationToken: cancellationToken);
+                    break;
+
+                case "date":
+                    if (!_birthdayDateParser.TryParseMonthDay(text, out var day, out var month))
+                    {
+                        await _botClient.SendTextMessageAsync(
+                            message.Chat.Id,
+                            "Не удалось распознать дату. Формат: 7 января",
+                            cancellationToken: cancellationToken);
+                        return;
+                    }
+
+                    command = new UpdateBirthdayCommand(birthdayId, "date", null, day, month, null, null);
+                    await _updateBirthday.ExecuteAsync(command, cancellationToken);
+                    await _conversationRepository.DeleteAsync(state.UserId, cancellationToken);
+                    await _botClient.SendTextMessageAsync(
+                        message.Chat.Id,
+                        "Дата обновлена",
+                        cancellationToken: cancellationToken);
+                    break;
+
+                case "birthYear":
+                    int? birthYear = null;
+                    if (!IsSkip(text) && int.TryParse(text, out var year) && year > 0)
+                    {
+                        birthYear = year;
+                    }
+
+                    command = new UpdateBirthdayCommand(birthdayId, "birthYear", null, null, null, birthYear, null);
+                    await _updateBirthday.ExecuteAsync(command, cancellationToken);
+                    await _conversationRepository.DeleteAsync(state.UserId, cancellationToken);
+                    await _botClient.SendTextMessageAsync(
+                        message.Chat.Id,
+                        "Год рождения обновлён",
+                        cancellationToken: cancellationToken);
+                    break;
+
+                case "contact":
+                    var contact = IsSkip(text) ? null : text;
+                    command = new UpdateBirthdayCommand(birthdayId, "contact", null, null, null, null, contact);
+                    await _updateBirthday.ExecuteAsync(command, cancellationToken);
+                    await _conversationRepository.DeleteAsync(state.UserId, cancellationToken);
+                    await _botClient.SendTextMessageAsync(
+                        message.Chat.Id,
+                        "Контакт обновлён",
+                        cancellationToken: cancellationToken);
+                    break;
+
+                default:
+                    await _conversationRepository.DeleteAsync(state.UserId, cancellationToken);
+                    await _botClient.SendTextMessageAsync(
+                        message.Chat.Id,
+                        "Неизвестное поле для редактирования",
+                        cancellationToken: cancellationToken);
+                    break;
+            }
+        }
+        catch (InvalidOperationException ex)
+        {
+            await _botClient.SendTextMessageAsync(
+                message.Chat.Id,
+                $"Ошибка: {ex.Message}",
+                cancellationToken: cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            await _conversationRepository.DeleteAsync(state.UserId, cancellationToken);
+            await _botClient.SendTextMessageAsync(
+                message.Chat.Id,
+                "Произошла ошибка при обновлении. Попробуйте позже.",
+                cancellationToken: cancellationToken);
+        }
+    }
+
+    private static EventEditConversationData DeserializeEventEditData(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return new EventEditConversationData();
+        }
+
+        return JsonSerializer.Deserialize<EventEditConversationData>(json, JsonOptions)
+            ?? new EventEditConversationData();
+    }
+
+    private static string SerializeEventEditData(EventEditConversationData data)
     {
         return JsonSerializer.Serialize(data, JsonOptions);
     }

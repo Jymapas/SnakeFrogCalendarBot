@@ -95,4 +95,37 @@ public sealed class EventRepository : IEventRepository
 
         return allEvents;
     }
+
+    public async Task<Event?> GetByIdAsync(int id, CancellationToken cancellationToken)
+    {
+        return await _dbContext.Events
+            .FirstOrDefaultAsync(e => e.Id == id, cancellationToken);
+    }
+
+    public async Task UpdateAsync(Event eventEntity, CancellationToken cancellationToken)
+    {
+        _dbContext.Events.Update(eventEntity);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task DeleteAsync(int id, CancellationToken cancellationToken)
+    {
+        var eventEntity = await _dbContext.Events
+            .Include(e => e.Attachments)
+            .FirstOrDefaultAsync(e => e.Id == id, cancellationToken);
+
+        if (eventEntity is not null)
+        {
+            _dbContext.Events.Remove(eventEntity);
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+    }
+
+    public async Task<IReadOnlyList<Event>> ListAllAsync(CancellationToken cancellationToken)
+    {
+        return await _dbContext.Events
+            .AsNoTracking()
+            .OrderByDescending(e => e.CreatedAtUtc)
+            .ToListAsync(cancellationToken);
+    }
 }
