@@ -28,16 +28,29 @@ using Telegram.Bot;
 using Npgsql.EntityFrameworkCore.PostgreSQL;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Extensions;
 using DotNetEnv;
+using Microsoft.Extensions.Configuration;
+using System.Diagnostics;
+using System.Net.Sockets;
+using System.Data;
 
 var currentDir = Directory.GetCurrentDirectory();
 var envPath = Path.Combine(currentDir, ".env");
+
 if (!File.Exists(envPath))
 {
-    var projectRoot = Path.Combine(currentDir, "..", "..", "..", "..");
-    var projectRootEnv = Path.GetFullPath(Path.Combine(projectRoot, ".env"));
-    if (File.Exists(projectRootEnv))
+    var assemblyLocation = System.Reflection.Assembly.GetExecutingAssembly().Location;
+    var assemblyDir = Path.GetDirectoryName(assemblyLocation);
+    var projectRoot = assemblyDir;
+    
+    for (int i = 0; i < 6 && projectRoot != null; i++)
     {
-        envPath = projectRootEnv;
+        projectRoot = Path.GetDirectoryName(projectRoot);
+        var candidateEnv = Path.Combine(projectRoot ?? "", ".env");
+        if (File.Exists(candidateEnv))
+        {
+            envPath = candidateEnv;
+            break;
+        }
     }
 }
 
@@ -50,8 +63,14 @@ Log.Logger = SerilogSetup.CreateLogger();
 
 try
 {
+    await EnsurePostgresRunningAsync();
+
     var builder = Host.CreateDefaultBuilder(args)
         .UseSerilog()
+        .ConfigureAppConfiguration((context, config) =>
+        {
+            config.AddEnvironmentVariables();
+        })
         .ConfigureServices((context, services) =>
         {
             var options = AppOptions.FromConfiguration(context.Configuration);
@@ -68,7 +87,7 @@ try
             services.AddDbContext<CalendarDbContext>(db =>
                 db.UseNpgsql(
                         options.PostgresConnectionString,
-                        npgsql => npgsql.MigrationsAssembly(typeof(CalendarDbContext).Assembly.FullName)));
+                        npgsql => npgsql.MigrationsAssembly("SnakeFrogCalendarBot.Infrastructure")));
 
             services.AddScoped<IBirthdayRepository, BirthdayRepository>();
             services.AddScoped<IEventRepository, EventRepository>();
@@ -146,33 +165,235 @@ try
         var dbContext = scope.ServiceProvider.GetRequiredService<CalendarDbContext>();
         var options = scope.ServiceProvider.GetRequiredService<AppOptions>();
         
+        var connectionStringBuilder = new NpgsqlConnectionStringBuilder(options.PostgresConnectionString);
+        var databaseName = connectionStringBuilder.Database;
+        var userName = connectionStringBuilder.Username;
+        var password = connectionStringBuilder.Password;
+        
+        var adminConnectionString = new NpgsqlConnectionStringBuilder
+        {
+            Host = connectionStringBuilder.Host,
+            Port = connectionStringBuilder.Port,
+            Database = "postgres"
+        };
+        
+        var currentUser = Environment.GetEnvironmentVariable("USER") ?? Environment.GetEnvironmentVariable("USERNAME") ?? "postgres";
+        adminConnectionString.Username = currentUser;
+        
+        Log.Debug("Подключение к системной БД postgres с пользователем {AdminUser} для создания пользователя {TargetUser} и БД {DatabaseName}", currentUser, userName, databaseName);
+
         try
         {
-            await dbContext.Database.CanConnectAsync();
-        }
-        catch
-        {
-            var connectionStringBuilder = new NpgsqlConnectionStringBuilder(options.PostgresConnectionString);
-            var databaseName = connectionStringBuilder.Database;
-            connectionStringBuilder.Database = "postgres";
-
-            await using (var tempConnection = new NpgsqlConnection(connectionStringBuilder.ConnectionString))
+            await using (var adminConnection = new NpgsqlConnection(adminConnectionString.ConnectionString))
             {
-                await tempConnection.OpenAsync();
-                var command = tempConnection.CreateCommand();
-                command.CommandText = $"SELECT 1 FROM pg_database WHERE datname = '{databaseName}'";
-                var exists = await command.ExecuteScalarAsync() != null;
+                await adminConnection.OpenAsync();
+                Log.Debug("Подключение к системной БД postgres успешно");
+                
+                var checkUserCommand = adminConnection.CreateCommand();
+                checkUserCommand.CommandText = "SELECT 1 FROM pg_roles WHERE rolname = $1";
+                checkUserCommand.Parameters.AddWithValue(userName);
+                var userExists = await checkUserCommand.ExecuteScalarAsync() != null;
+                Log.Debug("Пользователь {UserName} существует: {Exists}", userName, userExists);
 
-                if (!exists)
+                if (!userExists)
                 {
-                    command.CommandText = $"CREATE DATABASE \"{databaseName}\"";
-                    await command.ExecuteNonQueryAsync();
-                    Log.Information("Database {DatabaseName} created", databaseName);
+                    var createUserCommand = adminConnection.CreateCommand();
+                    if (string.IsNullOrEmpty(password))
+                    {
+                        createUserCommand.CommandText = $"CREATE USER \"{userName}\"";
+                    }
+                    else
+                    {
+                        createUserCommand.CommandText = $"CREATE USER \"{userName}\" WITH PASSWORD '{password.Replace("'", "''")}'";
+                    }
+                    await createUserCommand.ExecuteNonQueryAsync();
+                    Log.Information("Пользователь {UserName} создан", userName);
+                }
+
+                var checkDbCommand = adminConnection.CreateCommand();
+                checkDbCommand.CommandText = "SELECT 1 FROM pg_database WHERE datname = $1";
+                checkDbCommand.Parameters.AddWithValue(databaseName);
+                var dbExists = await checkDbCommand.ExecuteScalarAsync() != null;
+                Log.Debug("База данных {DatabaseName} существует: {Exists}", databaseName, dbExists);
+
+                if (!dbExists)
+                {
+                    var createDbCommand = adminConnection.CreateCommand();
+                    createDbCommand.CommandText = $"CREATE DATABASE \"{databaseName}\" OWNER \"{userName}\"";
+                    await createDbCommand.ExecuteNonQueryAsync();
+                    Log.Information("База данных {DatabaseName} создана", databaseName);
+                }
+                else
+                {
+                    var grantCommand = adminConnection.CreateCommand();
+                    grantCommand.CommandText = $"GRANT ALL PRIVILEGES ON DATABASE \"{databaseName}\" TO \"{userName}\"";
+                    try
+                    {
+                        await grantCommand.ExecuteNonQueryAsync();
+                        Log.Debug("Права на базу данных {DatabaseName} выданы пользователю {UserName}", databaseName, userName);
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Debug(ex, "Не удалось выдать права (возможно, уже выданы)");
+                    }
                 }
             }
         }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Ошибка при создании пользователя/базы данных. Попытка подключения с текущими учетными данными...");
+        }
 
-        await dbContext.Database.MigrateAsync();
+        try
+        {
+            await dbContext.Database.CanConnectAsync();
+            Log.Debug("Подключение к базе данных {DatabaseName} успешно", databaseName);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Не удалось подключиться к базе данных {DatabaseName} с пользователем {UserName}", databaseName, userName);
+            throw;
+        }
+
+        try
+        {
+            var allMigrations = dbContext.Database.GetMigrations();
+            var pendingMigrations = await dbContext.Database.GetPendingMigrationsAsync();
+            var appliedMigrations = await dbContext.Database.GetAppliedMigrationsAsync();
+            
+            Log.Information("Всего миграций в сборке: {Count}", allMigrations.Count());
+            if (allMigrations.Any())
+            {
+                Log.Information("Список миграций: {Migrations}", string.Join(", ", allMigrations));
+            }
+            Log.Information("Применено миграций: {Count}", appliedMigrations.Count());
+            if (appliedMigrations.Any())
+            {
+                Log.Information("Примененные миграции: {Migrations}", string.Join(", ", appliedMigrations));
+            }
+            Log.Information("Ожидают применения: {Count}", pendingMigrations.Count());
+            if (pendingMigrations.Any())
+            {
+                Log.Information("Ожидающие миграции: {Migrations}", string.Join(", ", pendingMigrations));
+            }
+            
+            if (allMigrations.Any())
+            {
+                if (pendingMigrations.Any())
+                {
+                    Log.Information("Применение {Count} миграций: {Migrations}", pendingMigrations.Count(), string.Join(", ", pendingMigrations));
+                    await dbContext.Database.MigrateAsync();
+                    Log.Information("Миграции применены успешно");
+                }
+                else
+                {
+                    Log.Information("Все миграции уже применены");
+                }
+            }
+            else
+            {
+                Log.Warning("Миграции не найдены в сборке. Используется EnsureCreated() для создания схемы БД");
+                
+                try
+                {
+                    var canConnect = await dbContext.Database.CanConnectAsync();
+                    
+                    if (canConnect)
+                    {
+                        var created = await dbContext.Database.EnsureCreatedAsync();
+                        Log.Information("Схема БД создана через EnsureCreated(): {Created}", created);
+                    }
+                    else
+                    {
+                        Log.Error("Не удалось подключиться к базе данных для создания схемы");
+                    }
+                }
+                catch (Exception ensureEx)
+                {
+                    Log.Error(ensureEx, "Ошибка при создании схемы через EnsureCreated()");
+                }
+            }
+            
+            var tablesExist = await CheckTablesExistAsync(dbContext);
+            Log.Information("Проверка таблиц: conversation_states={HasConversationStates}, birthdays={HasBirthdays}, events={HasEvents}", 
+                tablesExist.HasConversationStates, tablesExist.HasBirthdays, tablesExist.HasEvents);
+            
+            if (!tablesExist.HasConversationStates || !tablesExist.HasBirthdays || !tablesExist.HasEvents)
+            {
+                Log.Warning("Не все таблицы существуют. Принудительное создание схемы через EnsureCreated()...");
+                
+                try
+                {
+                    var created = await dbContext.Database.EnsureCreatedAsync();
+                    Log.Information("Схема БД создана через EnsureCreated(): {Created}", created);
+                    
+                    if (!created)
+                    {
+                        Log.Warning("EnsureCreated() вернул false. Попытка создать таблицы вручную через SQL...");
+                        await CreateTablesManuallyAsync(dbContext);
+                    }
+                    
+                    var tablesExistAfter = await CheckTablesExistAsync(dbContext);
+                    Log.Information("Проверка таблиц после EnsureCreated: conversation_states={HasConversationStates}, birthdays={HasBirthdays}, events={HasEvents}", 
+                        tablesExistAfter.HasConversationStates, tablesExistAfter.HasBirthdays, tablesExistAfter.HasEvents);
+                }
+                catch (Exception createEx)
+                {
+                    Log.Error(createEx, "Ошибка при принудительном создании схемы");
+                    Log.Warning("Попытка создать таблицы вручную через SQL...");
+                    await CreateTablesManuallyAsync(dbContext);
+                }
+            }
+            
+            if (tablesExist.HasEvents)
+            {
+                Log.Information("Проверка и добавление недостающих колонок в таблице events...");
+                await EnsureEventColumnsExistAsync(dbContext);
+            }
+            
+            var attachmentsExist = await CheckTableExistsAsync(dbContext, "attachments");
+            Log.Information("Таблица attachments существует: {Exists}", attachmentsExist);
+            if (attachmentsExist)
+            {
+                Log.Information("Проверка и добавление недостающих колонок в таблице attachments...");
+                try
+                {
+                    await EnsureAttachmentColumnsExistAsync(dbContext);
+                }
+                catch (Exception attachEx)
+                {
+                    Log.Error(attachEx, "Критическая ошибка при добавлении колонок в attachments. Попытка принудительного добавления...");
+                    await ForceAddAttachmentColumnsAsync(dbContext);
+                }
+            }
+            else
+            {
+                Log.Warning("Таблица attachments не найдена. Попытка принудительного добавления колонок на случай, если таблица существует...");
+                try
+                {
+                    await ForceAddAttachmentColumnsAsync(dbContext);
+                }
+                catch (Exception forceEx)
+                {
+                    Log.Warning(forceEx, "Не удалось добавить колонки в attachments (таблица может не существовать)");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Ошибка при применении миграций: {Message}", ex.Message);
+            Log.Warning("Попытка создать схему БД через EnsureCreated()...");
+            try
+            {
+                var created = await dbContext.Database.EnsureCreatedAsync();
+                Log.Information("Схема БД создана через EnsureCreated(): {Created}", created);
+            }
+            catch (Exception ensureEx)
+            {
+                Log.Error(ensureEx, "Не удалось создать схему БД");
+                throw;
+            }
+        }
     }
 
     await host.RunAsync();
@@ -185,3 +406,459 @@ finally
 {
     Log.CloseAndFlush();
 }
+
+static async Task EnsurePostgresRunningAsync()
+{
+    if (IsRunningInDocker())
+    {
+        return;
+    }
+
+    var postgresHost = Environment.GetEnvironmentVariable("POSTGRES_HOST") ?? "localhost";
+    var postgresPort = int.TryParse(Environment.GetEnvironmentVariable("POSTGRES_PORT"), out var port) ? port : 5432;
+
+    var checkHost = postgresHost == "postgres" ? "localhost" : postgresHost;
+
+    if (!await IsPortOpenAsync(checkHost, postgresPort))
+    {
+        Log.Information("PostgreSQL не доступен на {Host}:{Port}, пытаюсь запустить локально...", checkHost, postgresPort);
+        
+        try
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = "brew",
+                Arguments = "services start postgresql@16",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            using var process = Process.Start(startInfo);
+            if (process != null)
+            {
+                var outputTask = process.StandardOutput.ReadToEndAsync();
+                var errorTask = process.StandardError.ReadToEndAsync();
+                await process.WaitForExitAsync();
+                var output = await outputTask;
+                var error = await errorTask;
+
+                if (process.ExitCode == 0)
+                {
+                    Log.Information("Запуск PostgreSQL через brew services, ожидание готовности...");
+                    
+                    for (int i = 0; i < 10; i++)
+                    {
+                        await Task.Delay(2000);
+                        if (await IsPortOpenAsync("localhost", postgresPort))
+                        {
+                            Log.Information("PostgreSQL готов к работе");
+                            return;
+                        }
+                    }
+                    
+                    Log.Warning("PostgreSQL не стал доступен в течение 20 секунд");
+                }
+                else
+                {
+                    if (error.Contains("Service `postgresql@16` is already started") || 
+                        error.Contains("already started") ||
+                        output.Contains("already started"))
+                    {
+                        Log.Information("PostgreSQL уже запущен через brew services");
+                    }
+                    else
+                    {
+                        Log.Warning("Не удалось запустить PostgreSQL через brew services. Exit code: {ExitCode}, Error: {Error}", process.ExitCode, error);
+                        Log.Information("Попробуйте запустить вручную: brew services start postgresql@16");
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Ошибка при попытке запустить PostgreSQL. Убедитесь, что PostgreSQL установлен через Homebrew.");
+            Log.Information("Для установки: brew install postgresql@16");
+            Log.Information("Для запуска: brew services start postgresql@16");
+        }
+    }
+    else
+    {
+        Log.Information("PostgreSQL уже доступен на {Host}:{Port}", checkHost, postgresPort);
+    }
+}
+
+static async Task CreateTablesManuallyAsync(CalendarDbContext dbContext)
+{
+    try
+    {
+        var connection = dbContext.Database.GetDbConnection();
+        if (connection.State != System.Data.ConnectionState.Open)
+        {
+            await connection.OpenAsync();
+        }
+        
+        var command = connection.CreateCommand();
+        command.CommandText = @"
+            CREATE TABLE IF NOT EXISTS conversation_states (
+                user_id BIGINT NOT NULL PRIMARY KEY,
+                conversation_name VARCHAR(100) NOT NULL,
+                step VARCHAR(100) NOT NULL,
+                state_json TEXT,
+                created_at_utc TIMESTAMP WITH TIME ZONE NOT NULL,
+                updated_at_utc TIMESTAMP WITH TIME ZONE NOT NULL
+            );
+            
+            CREATE TABLE IF NOT EXISTS birthdays (
+                id SERIAL PRIMARY KEY,
+                person_name VARCHAR(200) NOT NULL,
+                day INTEGER NOT NULL,
+                month INTEGER NOT NULL,
+                birth_year INTEGER,
+                contact VARCHAR(200),
+                created_at_utc TIMESTAMP WITH TIME ZONE NOT NULL,
+                updated_at_utc TIMESTAMP WITH TIME ZONE NOT NULL
+            );
+            
+            CREATE INDEX IF NOT EXISTS ix_birthdays_month_day ON birthdays(month, day);
+            
+            CREATE TABLE IF NOT EXISTS events (
+                id SERIAL PRIMARY KEY,
+                title VARCHAR(200) NOT NULL,
+                kind INTEGER NOT NULL,
+                is_all_day BOOLEAN NOT NULL,
+                occurs_at_utc TIMESTAMP WITH TIME ZONE,
+                month INTEGER,
+                day INTEGER,
+                time_of_day BIGINT,
+                description VARCHAR(1000),
+                place VARCHAR(200),
+                link VARCHAR(500),
+                created_at_utc TIMESTAMP WITH TIME ZONE NOT NULL,
+                updated_at_utc TIMESTAMP WITH TIME ZONE NOT NULL
+            );
+            
+            CREATE TABLE IF NOT EXISTS attachments (
+                id SERIAL PRIMARY KEY,
+                event_id INTEGER NOT NULL,
+                telegram_file_id VARCHAR(200) NOT NULL,
+                telegram_file_unique_id VARCHAR(200) NOT NULL,
+                file_name VARCHAR(500) NOT NULL,
+                mime_type VARCHAR(100),
+                size BIGINT,
+                version INTEGER NOT NULL,
+                is_current BOOLEAN NOT NULL,
+                uploaded_at_utc TIMESTAMP WITH TIME ZONE NOT NULL,
+                FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
+            );
+            
+            CREATE TABLE IF NOT EXISTS notification_runs (
+                id SERIAL PRIMARY KEY,
+                digest_type INTEGER NOT NULL,
+                period_start_local DATE NOT NULL,
+                period_end_local DATE NOT NULL,
+                time_zone_id VARCHAR(100) NOT NULL,
+                created_at_utc TIMESTAMP WITH TIME ZONE NOT NULL,
+                CONSTRAINT uq_notification_runs_type_period_timezone UNIQUE(digest_type, period_start_local, period_end_local, time_zone_id)
+            );";
+        
+        await command.ExecuteNonQueryAsync();
+        Log.Information("Таблицы созданы вручную через SQL");
+        
+        var alterCommand = connection.CreateCommand();
+        alterCommand.CommandText = @"
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'events' AND column_name = 'month') THEN
+                    ALTER TABLE events ADD COLUMN month INTEGER;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'events' AND column_name = 'day') THEN
+                    ALTER TABLE events ADD COLUMN day INTEGER;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'events' AND column_name = 'time_of_day') THEN
+                    ALTER TABLE events ADD COLUMN time_of_day BIGINT;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'events' AND column_name = 'occurs_at_utc') THEN
+                    ALTER TABLE events ADD COLUMN occurs_at_utc TIMESTAMP WITH TIME ZONE;
+                END IF;
+            END $$;";
+        
+        try
+        {
+            await alterCommand.ExecuteNonQueryAsync();
+            Log.Information("Проверка и добавление недостающих колонок выполнены");
+        }
+        catch (Exception alterEx)
+        {
+            Log.Warning(alterEx, "Ошибка при добавлении недостающих колонок (возможно, они уже существуют)");
+        }
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Ошибка при создании таблиц вручную");
+        throw;
+    }
+}
+
+static async Task EnsureEventColumnsExistAsync(CalendarDbContext dbContext)
+{
+    try
+    {
+        var connection = dbContext.Database.GetDbConnection();
+        if (connection.State != ConnectionState.Open)
+        {
+            await connection.OpenAsync();
+        }
+        
+        var alterCommand = connection.CreateCommand();
+        alterCommand.CommandText = @"
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'events' AND column_name = 'month') THEN
+                    ALTER TABLE events ADD COLUMN month INTEGER;
+                    RAISE NOTICE 'Added column month';
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'events' AND column_name = 'day') THEN
+                    ALTER TABLE events ADD COLUMN day INTEGER;
+                    RAISE NOTICE 'Added column day';
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'events' AND column_name = 'time_of_day') THEN
+                    ALTER TABLE events ADD COLUMN time_of_day BIGINT;
+                    RAISE NOTICE 'Added column time_of_day';
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'events' AND column_name = 'occurs_at_utc') THEN
+                    ALTER TABLE events ADD COLUMN occurs_at_utc TIMESTAMP WITH TIME ZONE;
+                    RAISE NOTICE 'Added column occurs_at_utc';
+                END IF;
+            END $$;";
+        
+        await alterCommand.ExecuteNonQueryAsync();
+        Log.Information("Проверка и добавление недостающих колонок в таблице events выполнены");
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Ошибка при добавлении недостающих колонок в таблице events");
+    }
+}
+
+static async Task EnsureAttachmentColumnsExistAsync(CalendarDbContext dbContext)
+{
+    try
+    {
+        var connection = dbContext.Database.GetDbConnection();
+        if (connection.State != ConnectionState.Open)
+        {
+            await connection.OpenAsync();
+        }
+        
+        var checkCommand = connection.CreateCommand();
+        checkCommand.CommandText = @"
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_schema = 'public' 
+            AND table_name = 'attachments' 
+            ORDER BY column_name";
+        
+        var existingColumns = new List<string>();
+        using (var reader = await checkCommand.ExecuteReaderAsync())
+        {
+            while (await reader.ReadAsync())
+            {
+                existingColumns.Add(reader.GetString(0));
+            }
+        }
+        
+        Log.Information("Существующие колонки в таблице attachments: {Columns}", string.Join(", ", existingColumns));
+        
+        var alterCommand = connection.CreateCommand();
+        var alterStatements = new List<string>();
+        
+        if (!existingColumns.Contains("telegram_file_id"))
+        {
+            alterStatements.Add("ALTER TABLE attachments ADD COLUMN telegram_file_id VARCHAR(200)");
+        }
+        if (!existingColumns.Contains("telegram_file_unique_id"))
+        {
+            alterStatements.Add("ALTER TABLE attachments ADD COLUMN telegram_file_unique_id VARCHAR(200)");
+        }
+        if (!existingColumns.Contains("mime_type"))
+        {
+            alterStatements.Add("ALTER TABLE attachments ADD COLUMN mime_type VARCHAR(100)");
+        }
+        if (!existingColumns.Contains("size"))
+        {
+            alterStatements.Add("ALTER TABLE attachments ADD COLUMN size BIGINT");
+        }
+        if (!existingColumns.Contains("is_current"))
+        {
+            alterStatements.Add("ALTER TABLE attachments ADD COLUMN is_current BOOLEAN NOT NULL DEFAULT true");
+        }
+        if (!existingColumns.Contains("uploaded_at_utc"))
+        {
+            alterStatements.Add("ALTER TABLE attachments ADD COLUMN uploaded_at_utc TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()");
+        }
+        
+        if (alterStatements.Any())
+        {
+            alterCommand.CommandText = string.Join("; ", alterStatements) + ";";
+            Log.Information("Выполнение ALTER TABLE для добавления колонок: {Statements}", alterCommand.CommandText);
+            await alterCommand.ExecuteNonQueryAsync();
+            Log.Information("Добавлено {Count} колонок в таблицу attachments", alterStatements.Count);
+        }
+        else
+        {
+            Log.Information("Все необходимые колонки уже существуют в таблице attachments");
+        }
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Ошибка при добавлении недостающих колонок в таблице attachments: {Message}", ex.Message);
+        throw;
+    }
+}
+
+static async Task ForceAddAttachmentColumnsAsync(CalendarDbContext dbContext)
+{
+    try
+    {
+        var connection = dbContext.Database.GetDbConnection();
+        if (connection.State != ConnectionState.Open)
+        {
+            await connection.OpenAsync();
+        }
+        
+        var commands = new[]
+        {
+            "ALTER TABLE attachments ADD COLUMN IF NOT EXISTS telegram_file_id VARCHAR(200)",
+            "ALTER TABLE attachments ADD COLUMN IF NOT EXISTS telegram_file_unique_id VARCHAR(200)",
+            "ALTER TABLE attachments ADD COLUMN IF NOT EXISTS mime_type VARCHAR(100)",
+            "ALTER TABLE attachments ADD COLUMN IF NOT EXISTS size BIGINT",
+            "ALTER TABLE attachments ADD COLUMN IF NOT EXISTS is_current BOOLEAN NOT NULL DEFAULT true",
+            "ALTER TABLE attachments ADD COLUMN IF NOT EXISTS uploaded_at_utc TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()"
+        };
+        
+        foreach (var cmdText in commands)
+        {
+            try
+            {
+                var command = connection.CreateCommand();
+                command.CommandText = cmdText;
+                await command.ExecuteNonQueryAsync();
+                Log.Information("Выполнено: {Command}", cmdText);
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Ошибка при выполнении команды {Command}: {Message}", cmdText, ex.Message);
+            }
+        }
+        
+        Log.Information("Принудительное добавление колонок в таблицу attachments завершено");
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Критическая ошибка при принудительном добавлении колонок в attachments");
+    }
+}
+
+static async Task<bool> CheckTableExistsAsync(CalendarDbContext dbContext, string tableName)
+{
+    try
+    {
+        var connection = dbContext.Database.GetDbConnection();
+        if (connection.State != ConnectionState.Open)
+        {
+            await connection.OpenAsync();
+        }
+        
+        var command = connection.CreateCommand();
+        command.CommandText = $@"
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = '{tableName}'
+            )";
+        
+        var result = await command.ExecuteScalarAsync();
+        return result is bool exists && exists;
+    }
+    catch (Exception ex)
+    {
+        Log.Warning(ex, "Ошибка при проверке существования таблицы {TableName}: {Message}", tableName, ex.Message);
+        return false;
+    }
+}
+
+static async Task<(bool HasConversationStates, bool HasBirthdays, bool HasEvents)> CheckTablesExistAsync(CalendarDbContext dbContext)
+{
+    try
+    {
+        var connection = dbContext.Database.GetDbConnection();
+        if (connection.State != ConnectionState.Open)
+        {
+            await connection.OpenAsync();
+        }
+        
+        var command = connection.CreateCommand();
+        command.CommandText = @"
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = 'conversation_states'
+            ) as has_conversation_states,
+            EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = 'birthdays'
+            ) as has_birthdays,
+            EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = 'events'
+            ) as has_events";
+        
+        using var reader = await command.ExecuteReaderAsync();
+        if (await reader.ReadAsync())
+        {
+            return (
+                reader.GetBoolean(0),
+                reader.GetBoolean(1),
+                reader.GetBoolean(2)
+            );
+        }
+    }
+    catch (Exception ex)
+    {
+        Log.Warning(ex, "Ошибка при проверке существования таблиц");
+    }
+    
+    return (false, false, false);
+}
+
+static bool IsRunningInDocker()
+{
+    return File.Exists("/.dockerenv") || 
+           !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER"));
+}
+
+static async Task<bool> IsPortOpenAsync(string host, int port)
+{
+    try
+    {
+        using var client = new TcpClient();
+        var connectTask = client.ConnectAsync(host, port);
+        var timeoutTask = Task.Delay(TimeSpan.FromSeconds(2));
+        var completedTask = await Task.WhenAny(connectTask, timeoutTask);
+        
+        if (completedTask == connectTask && client.Connected)
+        {
+            return true;
+        }
+    }
+    catch
+    {
+    }
+    
+    return false;
+}
+
