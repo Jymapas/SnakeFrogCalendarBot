@@ -166,7 +166,7 @@ try
                 q.AddTrigger(opts => opts
                     .ForJob(dailyJobKey)
                     .WithIdentity("DailyDigestTrigger")
-                    .WithCronSchedule("0 0 9 ? * *"));
+                    .WithCronSchedule("0 55 19 ? * *")); // 19:41 для теста (было: 0 0 9 ? * *)
 
                 var weeklyJobKey = new JobKey("WeeklyDigestJob");
                 q.AddJob<WeeklyDigestJob>(weeklyJobKey);
@@ -377,6 +377,14 @@ try
             {
                 Log.Information("Проверка и добавление недостающих колонок в таблице events...");
                 await EnsureEventColumnsExistAsync(dbContext);
+            }
+            
+            var notificationRunsExist = await CheckTableExistsAsync(dbContext, "notification_runs");
+            Log.Information("Таблица notification_runs существует: {Exists}", notificationRunsExist);
+            if (notificationRunsExist)
+            {
+                Log.Information("Проверка и исправление типа колонок в таблице notification_runs...");
+                await EnsureNotificationRunColumnsTypeAsync(dbContext);
             }
             
             var attachmentsExist = await CheckTableExistsAsync(dbContext, "attachments");
@@ -616,8 +624,8 @@ static async Task CreateTablesManuallyAsync(CalendarDbContext dbContext)
             CREATE TABLE IF NOT EXISTS notification_runs (
                 id SERIAL PRIMARY KEY,
                 digest_type INTEGER NOT NULL,
-                period_start_local DATE NOT NULL,
-                period_end_local DATE NOT NULL,
+                period_start_local TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+                period_end_local TIMESTAMP WITHOUT TIME ZONE NOT NULL,
                 time_zone_id VARCHAR(100) NOT NULL,
                 created_at_utc TIMESTAMP WITH TIME ZONE NOT NULL,
                 CONSTRAINT uq_notification_runs_type_period_timezone UNIQUE(digest_type, period_start_local, period_end_local, time_zone_id)
@@ -847,6 +855,117 @@ static async Task EnsureAttachmentColumnsExistAsync(CalendarDbContext dbContext)
     catch (Exception ex)
     {
         Log.Error(ex, "Ошибка при добавлении недостающих колонок в таблице attachments: {Message}", ex.Message);
+        throw;
+    }
+}
+
+static async Task EnsureNotificationRunColumnsTypeAsync(CalendarDbContext dbContext)
+{
+    try
+    {
+        var connection = dbContext.Database.GetDbConnection();
+        if (connection.State != ConnectionState.Open)
+        {
+            await connection.OpenAsync();
+        }
+        
+        var checkCommand = connection.CreateCommand();
+        checkCommand.CommandText = @"
+            SELECT column_name, data_type, udt_name
+            FROM information_schema.columns 
+            WHERE table_schema = 'public' 
+            AND table_name = 'notification_runs' 
+            AND column_name IN ('period_start_local', 'period_end_local')
+            ORDER BY column_name";
+        
+        var columnsToFix = new List<string>();
+        using (var reader = await checkCommand.ExecuteReaderAsync())
+        {
+            while (await reader.ReadAsync())
+            {
+                var columnName = reader.GetString(0);
+                var dataType = reader.GetString(1);
+                var udtName = reader.GetString(2);
+                
+                Log.Information("Колонка {ColumnName}: data_type={DataType}, udt_name={UdtName}", columnName, dataType, udtName);
+                
+                // Проверяем, если тип timestamp with time zone, нужно изменить на timestamp without time zone
+                if (udtName == "timestamptz" || dataType == "timestamp with time zone")
+                {
+                    columnsToFix.Add(columnName);
+                }
+            }
+        }
+        
+        if (columnsToFix.Any())
+        {
+            Log.Information("Обнаружены колонки с неправильным типом, требуется изменение: {Columns}", string.Join(", ", columnsToFix));
+            
+            // Временно удаляем индекс, если он существует
+            var dropIndexCommand = connection.CreateCommand();
+            dropIndexCommand.CommandText = @"
+                DO $$
+                BEGIN
+                    IF EXISTS (SELECT 1 FROM pg_indexes WHERE tablename = 'notification_runs' AND indexname LIKE '%period%') THEN
+                        DROP INDEX IF EXISTS ix_notification_runs_digest_type_period_start_local_period_end_lo CASCADE;
+                    END IF;
+                END $$;";
+            
+            try
+            {
+                await dropIndexCommand.ExecuteNonQueryAsync();
+                Log.Information("Временный индекс удален");
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Ошибка при удалении индекса (возможно, его нет)");
+            }
+            
+            // Изменяем тип колонок
+            foreach (var columnName in columnsToFix)
+            {
+                var alterCommand = connection.CreateCommand();
+                alterCommand.CommandText = $@"
+                    ALTER TABLE notification_runs 
+                    ALTER COLUMN {columnName} TYPE timestamp without time zone 
+                    USING {columnName}::timestamp without time zone;";
+                
+                try
+                {
+                    await alterCommand.ExecuteNonQueryAsync();
+                    Log.Information("Тип колонки {ColumnName} изменен на timestamp without time zone", columnName);
+                }
+                catch (Exception ex)
+                {
+                    Log.Error(ex, "Ошибка при изменении типа колонки {ColumnName}", columnName);
+                    throw;
+                }
+            }
+            
+            // Восстанавливаем индекс
+            var recreateIndexCommand = connection.CreateCommand();
+            recreateIndexCommand.CommandText = @"
+                CREATE UNIQUE INDEX IF NOT EXISTS ix_notification_runs_digest_type_period_start_local_period_end_lo 
+                ON notification_runs (digest_type, period_start_local, period_end_local, time_zone_id);";
+            
+            try
+            {
+                await recreateIndexCommand.ExecuteNonQueryAsync();
+                Log.Information("Индекс восстановлен");
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Ошибка при восстановлении индекса (возможно, он уже существует)");
+            }
+        }
+        else
+        {
+            Log.Information("Типы колонок в notification_runs корректны");
+        }
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Ошибка при проверке и исправлении типов колонок в notification_runs");
         throw;
     }
 }

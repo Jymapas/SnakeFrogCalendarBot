@@ -21,10 +21,12 @@ public sealed class NotificationRunConfiguration : IEntityTypeConfiguration<Noti
 
         builder.Property(nr => nr.PeriodStartLocal)
             .IsRequired()
+            .HasColumnType("timestamp without time zone")
             .HasColumnName("period_start_local");
 
         builder.Property(nr => nr.PeriodEndLocal)
             .IsRequired()
+            .HasColumnType("timestamp without time zone")
             .HasColumnName("period_end_local");
 
         builder.Property(nr => nr.TimeZoneId)
