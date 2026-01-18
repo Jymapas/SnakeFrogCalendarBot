@@ -379,6 +379,16 @@ try
                 await EnsureEventColumnsExistAsync(dbContext);
             }
             
+            var notificationRunsExist = await CheckTableExistsAsync(dbContext, "notification_runs");
+            Log.Information("Таблица notification_runs существует: {Exists}", notificationRunsExist);
+            if (notificationRunsExist)
+            {
+                Log.Information("Проверка и исправление структуры таблицы notification_runs...");
+                await EnsureNotificationRunStructureAsync(dbContext);
+                Log.Information("Проверка и исправление типа колонок в таблице notification_runs...");
+                await EnsureNotificationRunColumnsTypeAsync(dbContext);
+            }
+            
             var attachmentsExist = await CheckTableExistsAsync(dbContext, "attachments");
             Log.Information("Таблица attachments существует: {Exists}", attachmentsExist);
             if (attachmentsExist)
@@ -616,8 +626,8 @@ static async Task CreateTablesManuallyAsync(CalendarDbContext dbContext)
             CREATE TABLE IF NOT EXISTS notification_runs (
                 id SERIAL PRIMARY KEY,
                 digest_type INTEGER NOT NULL,
-                period_start_local DATE NOT NULL,
-                period_end_local DATE NOT NULL,
+                period_start_local TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+                period_end_local TIMESTAMP WITHOUT TIME ZONE NOT NULL,
                 time_zone_id VARCHAR(100) NOT NULL,
                 created_at_utc TIMESTAMP WITH TIME ZONE NOT NULL,
                 CONSTRAINT uq_notification_runs_type_period_timezone UNIQUE(digest_type, period_start_local, period_end_local, time_zone_id)
@@ -847,6 +857,466 @@ static async Task EnsureAttachmentColumnsExistAsync(CalendarDbContext dbContext)
     catch (Exception ex)
     {
         Log.Error(ex, "Ошибка при добавлении недостающих колонок в таблице attachments: {Message}", ex.Message);
+        throw;
+    }
+}
+
+static async Task EnsureNotificationRunStructureAsync(CalendarDbContext dbContext)
+{
+    try
+    {
+        var connection = dbContext.Database.GetDbConnection();
+        if (connection.State != ConnectionState.Open)
+        {
+            await connection.OpenAsync();
+        }
+        
+        var checkColumnsCommand = connection.CreateCommand();
+        checkColumnsCommand.CommandText = @"
+            SELECT column_name
+            FROM information_schema.columns 
+            WHERE table_schema = 'public' 
+            AND table_name = 'notification_runs' 
+            ORDER BY column_name";
+        
+        var existingColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        using (var reader = await checkColumnsCommand.ExecuteReaderAsync())
+        {
+            while (await reader.ReadAsync())
+            {
+                existingColumns.Add(reader.GetString(0));
+            }
+        }
+        
+        if (existingColumns.Contains("type"))
+        {
+            if (!existingColumns.Contains("digest_type"))
+            {
+                Log.Information("Обнаружена старая колонка 'type', переименовываю в 'digest_type'...");
+                var renameCommand = connection.CreateCommand();
+                renameCommand.CommandText = "ALTER TABLE notification_runs RENAME COLUMN type TO digest_type";
+                try
+                {
+                    await renameCommand.ExecuteNonQueryAsync();
+                    Log.Information("Колонка 'type' успешно переименована в 'digest_type'");
+                    existingColumns.Remove("type");
+                    existingColumns.Add("digest_type");
+                }
+                catch (Exception renameEx)
+                {
+                    Log.Error(renameEx, "Ошибка при переименовании колонки 'type' в 'digest_type'");
+                    throw;
+                }
+            }
+            else
+            {
+                Log.Warning("Обнаружены обе колонки 'type' и 'digest_type', удаляю старую колонку 'type'...");
+                var dropCommand = connection.CreateCommand();
+                dropCommand.CommandText = "ALTER TABLE notification_runs DROP COLUMN IF EXISTS type";
+                try
+                {
+                    await dropCommand.ExecuteNonQueryAsync();
+                    Log.Information("Старая колонка 'type' удалена");
+                    existingColumns.Remove("type");
+                }
+                catch (Exception dropEx)
+                {
+                    Log.Error(dropEx, "Ошибка при удалении старой колонки 'type'");
+                    throw;
+                }
+            }
+        }
+        
+        if (existingColumns.Contains("timezone"))
+        {
+            if (!existingColumns.Contains("time_zone_id"))
+            {
+                Log.Information("Обнаружена старая колонка 'timezone', переименовываю в 'time_zone_id'...");
+                var renameCommand = connection.CreateCommand();
+                renameCommand.CommandText = "ALTER TABLE notification_runs RENAME COLUMN timezone TO time_zone_id";
+                try
+                {
+                    await renameCommand.ExecuteNonQueryAsync();
+                    Log.Information("Колонка 'timezone' успешно переименована в 'time_zone_id'");
+                    existingColumns.Remove("timezone");
+                    existingColumns.Add("time_zone_id");
+                }
+                catch (Exception renameEx)
+                {
+                    Log.Error(renameEx, "Ошибка при переименовании колонки 'timezone' в 'time_zone_id'");
+                    throw;
+                }
+            }
+            else
+            {
+                Log.Warning("Обнаружены обе колонки 'timezone' и 'time_zone_id', удаляю старую колонку 'timezone'...");
+                var dropCommand = connection.CreateCommand();
+                dropCommand.CommandText = "ALTER TABLE notification_runs DROP COLUMN IF EXISTS timezone";
+                try
+                {
+                    await dropCommand.ExecuteNonQueryAsync();
+                    Log.Information("Старая колонка 'timezone' удалена");
+                    existingColumns.Remove("timezone");
+                }
+                catch (Exception dropEx)
+                {
+                    Log.Error(dropEx, "Ошибка при удалении старой колонки 'timezone'");
+                    throw;
+                }
+            }
+        }
+        
+        var requiredColumns = new Dictionary<string, string>
+        {
+            ["digest_type"] = "INTEGER NOT NULL DEFAULT 0",
+            ["period_start_local"] = "TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT '1970-01-01 00:00:00'::timestamp",
+            ["period_end_local"] = "TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT '1970-01-01 00:00:00'::timestamp",
+            ["time_zone_id"] = "VARCHAR(100) NOT NULL DEFAULT ''",
+            ["created_at_utc"] = "TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()"
+        };
+        
+        var missingColumns = new List<string>();
+        foreach (var (colName, _) in requiredColumns)
+        {
+            if (!existingColumns.Contains(colName))
+            {
+                missingColumns.Add(colName);
+            }
+        }
+        
+        if (missingColumns.Any())
+        {
+            Log.Information("Добавление недостающих колонок в notification_runs: {Columns}", string.Join(", ", missingColumns));
+            
+            foreach (var colName in missingColumns)
+            {
+                var colDef = requiredColumns[colName];
+                var addCmd = connection.CreateCommand();
+                addCmd.CommandText = $@"
+                    DO $$
+                    BEGIN
+                        IF NOT EXISTS (
+                            SELECT 1 FROM information_schema.columns 
+                            WHERE table_schema = 'public' 
+                            AND table_name = 'notification_runs' 
+                            AND column_name = '{colName}'
+                        ) THEN
+                            ALTER TABLE notification_runs ADD COLUMN {colName} {colDef};
+                        END IF;
+                    END $$;";
+                
+                try
+                {
+                    await addCmd.ExecuteNonQueryAsync();
+                    Log.Information("Колонка {ColumnName} добавлена в notification_runs", colName);
+                }
+                catch (Exception addEx)
+                {
+                    Log.Error(addEx, "Ошибка при добавлении колонки {ColumnName}", colName);
+                    throw;
+                }
+            }
+        }
+        else
+        {
+            Log.Information("Все необходимые колонки присутствуют в notification_runs");
+        }
+        
+        Log.Information("Проверка и исправление индексов notification_runs...");
+        
+        var listConstraintsCommand = connection.CreateCommand();
+        listConstraintsCommand.CommandText = @"
+            SELECT conname, contype
+            FROM pg_constraint
+            WHERE conrelid = 'notification_runs'::regclass
+            ORDER BY conname;";
+        
+        var existingConstraints = new List<string>();
+        using (var reader = await listConstraintsCommand.ExecuteReaderAsync())
+        {
+            while (await reader.ReadAsync())
+            {
+                var conname = reader.GetString(0);
+                var contype = reader.GetChar(1);
+                existingConstraints.Add($"{conname} (type: {contype})");
+                Log.Information("Найден constraint notification_runs: {ConstraintName} (type: {ConstraintType})", conname, contype);
+            }
+        }
+        
+        var dropAllConstraintsCommand = connection.CreateCommand();
+        dropAllConstraintsCommand.CommandText = @"
+            DO $$
+            DECLARE
+                con RECORD;
+            BEGIN
+                FOR con IN 
+                    SELECT conname
+                    FROM pg_constraint
+                    WHERE conrelid = 'notification_runs'::regclass
+                    AND contype = 'u'
+                    AND conname NOT LIKE '%_pkey'
+                LOOP
+                    BEGIN
+                        EXECUTE 'ALTER TABLE notification_runs DROP CONSTRAINT IF EXISTS ' || quote_ident(con.conname) || ' CASCADE';
+                        RAISE NOTICE 'Удален constraint: %', con.conname;
+                    EXCEPTION WHEN OTHERS THEN
+                        RAISE NOTICE 'Ошибка при удалении constraint %: %', con.conname, SQLERRM;
+                    END;
+                END LOOP;
+            END $$;";
+        
+        try
+        {
+            await dropAllConstraintsCommand.ExecuteNonQueryAsync();
+            Log.Information("Все уникальные constraints notification_runs (кроме первичного ключа) удалены");
+        }
+        catch (Exception dropEx)
+        {
+            Log.Warning(dropEx, "Ошибка при удалении всех constraints");
+        }
+        
+        var dropSpecificConstraintCommand = connection.CreateCommand();
+        dropSpecificConstraintCommand.CommandText = @"
+            ALTER TABLE notification_runs DROP CONSTRAINT IF EXISTS ix_notification_runs_digest_type_period_start_local_period_end_ CASCADE;";
+        
+        try
+        {
+            await dropSpecificConstraintCommand.ExecuteNonQueryAsync();
+            Log.Information("Попытка удаления constraint по точному имени из ошибки завершена");
+        }
+        catch (Exception dropEx)
+        {
+            Log.Warning(dropEx, "Ошибка при удалении constraint по точному имени");
+        }
+        
+        var dropAllIndexesCommand = connection.CreateCommand();
+        dropAllIndexesCommand.CommandText = @"
+            DO $$
+            DECLARE
+                idx RECORD;
+            BEGIN
+                FOR idx IN 
+                    SELECT indexname
+                    FROM pg_indexes
+                    WHERE schemaname = 'public' 
+                    AND tablename = 'notification_runs'
+                    AND indexname NOT LIKE '%_pkey'
+                    AND indexname NOT LIKE 'pk_%'
+                LOOP
+                    EXECUTE 'DROP INDEX IF EXISTS ' || quote_ident(idx.indexname) || ' CASCADE';
+                    RAISE NOTICE 'Удален индекс: %', idx.indexname;
+                END LOOP;
+            END $$;";
+        
+        try
+        {
+            await dropAllIndexesCommand.ExecuteNonQueryAsync();
+            Log.Information("Все индексы notification_runs (кроме первичного ключа) удалены");
+        }
+        catch (Exception dropEx)
+        {
+            Log.Warning(dropEx, "Ошибка при удалении старых индексов");
+        }
+        
+        var recreateIndexCmd = connection.CreateCommand();
+        recreateIndexCmd.CommandText = @"
+            CREATE UNIQUE INDEX IF NOT EXISTS ix_notification_runs_digest_type_period_start_local_period_end_lo 
+            ON notification_runs (digest_type, period_start_local, period_end_local, time_zone_id);";
+        
+        try
+        {
+            await recreateIndexCmd.ExecuteNonQueryAsync();
+            Log.Information("Уникальный индекс создан с правильными колонками (digest_type, period_start_local, period_end_local, time_zone_id)");
+        }
+        catch (Exception idxEx)
+        {
+            Log.Error(idxEx, "Ошибка при создании индекса");
+            throw;
+        }
+        
+        var dropOldConstraintsCommand = connection.CreateCommand();
+        dropOldConstraintsCommand.CommandText = @"
+            DO $$
+            DECLARE
+                con RECORD;
+                constraint_cols TEXT[];
+                col_count INT;
+            BEGIN
+                FOR con IN 
+                    SELECT conname, conkey
+                    FROM pg_constraint
+                    WHERE conrelid = 'notification_runs'::regclass
+                    AND contype = 'u'
+                    AND conname NOT LIKE '%_pkey'
+                LOOP
+                    SELECT array_agg(attname ORDER BY array_position(con.conkey, attnum))
+                    INTO constraint_cols
+                    FROM pg_attribute
+                    WHERE attrelid = 'notification_runs'::regclass
+                    AND attnum = ANY(con.conkey);
+                    
+                    SELECT array_length(constraint_cols, 1) INTO col_count;
+                    
+                    -- Удаляем constraint, если он содержит только 3 колонки (digest_type, period_start_local, period_end_local)
+                    -- без time_zone_id
+                    IF constraint_cols @> ARRAY['digest_type', 'period_start_local', 'period_end_local']::TEXT[] 
+                       AND NOT (constraint_cols @> ARRAY['time_zone_id']::TEXT[])
+                       AND col_count = 3 THEN
+                        BEGIN
+                            EXECUTE 'ALTER TABLE notification_runs DROP CONSTRAINT IF EXISTS ' || quote_ident(con.conname) || ' CASCADE';
+                            RAISE NOTICE 'Удален старый constraint без time_zone_id: % (колонки: %)', con.conname, array_to_string(constraint_cols, ', ');
+                        EXCEPTION WHEN OTHERS THEN
+                            RAISE NOTICE 'Ошибка при удалении constraint %: %', con.conname, SQLERRM;
+                        END;
+                    END IF;
+                END LOOP;
+            END $$;";
+        
+        try
+        {
+            await dropOldConstraintsCommand.ExecuteNonQueryAsync();
+            Log.Information("Старые constraints без time_zone_id удалены после создания индекса");
+        }
+        catch (Exception dropEx)
+        {
+            Log.Warning(dropEx, "Ошибка при удалении старых constraints без time_zone_id");
+        }
+        
+        var checkConstraintsAfterIndexCommand = connection.CreateCommand();
+        checkConstraintsAfterIndexCommand.CommandText = @"
+            SELECT conname, contype
+            FROM pg_constraint
+            WHERE conrelid = 'notification_runs'::regclass
+            AND contype = 'u'
+            AND conname NOT LIKE '%_pkey'
+            ORDER BY conname;";
+        
+        var constraintsAfterIndex = new List<string>();
+        using (var reader = await checkConstraintsAfterIndexCommand.ExecuteReaderAsync())
+        {
+            while (await reader.ReadAsync())
+            {
+                var conname = reader.GetString(0);
+                var contype = reader.GetChar(1);
+                constraintsAfterIndex.Add($"{conname} (type: {contype})");
+                Log.Information("Найден constraint notification_runs после создания индекса: {ConstraintName} (type: {ConstraintType})", conname, contype);
+            }
+        }
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Ошибка при проверке и исправлении структуры notification_runs");
+        throw;
+    }
+}
+
+static async Task EnsureNotificationRunColumnsTypeAsync(CalendarDbContext dbContext)
+{
+    try
+    {
+        var connection = dbContext.Database.GetDbConnection();
+        if (connection.State != ConnectionState.Open)
+        {
+            await connection.OpenAsync();
+        }
+        
+        var checkCommand = connection.CreateCommand();
+        checkCommand.CommandText = @"
+            SELECT column_name, data_type, udt_name
+            FROM information_schema.columns 
+            WHERE table_schema = 'public' 
+            AND table_name = 'notification_runs' 
+            AND column_name IN ('period_start_local', 'period_end_local')
+            ORDER BY column_name";
+        
+        var columnsToFix = new List<string>();
+        using (var reader = await checkCommand.ExecuteReaderAsync())
+        {
+            while (await reader.ReadAsync())
+            {
+                var columnName = reader.GetString(0);
+                var dataType = reader.GetString(1);
+                var udtName = reader.GetString(2);
+                
+                Log.Information("Колонка {ColumnName}: data_type={DataType}, udt_name={UdtName}", columnName, dataType, udtName);
+                
+                // Проверяем, если тип timestamp with time zone, нужно изменить на timestamp without time zone
+                if (udtName == "timestamptz" || dataType == "timestamp with time zone")
+                {
+                    columnsToFix.Add(columnName);
+                }
+            }
+        }
+        
+        if (columnsToFix.Any())
+        {
+            Log.Information("Обнаружены колонки с неправильным типом, требуется изменение: {Columns}", string.Join(", ", columnsToFix));
+            
+            // Временно удаляем индекс, если он существует
+            var dropIndexCommand = connection.CreateCommand();
+            dropIndexCommand.CommandText = @"
+                DO $$
+                BEGIN
+                    IF EXISTS (SELECT 1 FROM pg_indexes WHERE tablename = 'notification_runs' AND indexname LIKE '%period%') THEN
+                        DROP INDEX IF EXISTS ix_notification_runs_digest_type_period_start_local_period_end_lo CASCADE;
+                    END IF;
+                END $$;";
+            
+            try
+            {
+                await dropIndexCommand.ExecuteNonQueryAsync();
+                Log.Information("Временный индекс удален");
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Ошибка при удалении индекса (возможно, его нет)");
+            }
+            
+            // Изменяем тип колонок
+            foreach (var columnName in columnsToFix)
+            {
+                var alterCommand = connection.CreateCommand();
+                alterCommand.CommandText = $@"
+                    ALTER TABLE notification_runs 
+                    ALTER COLUMN {columnName} TYPE timestamp without time zone 
+                    USING {columnName}::timestamp without time zone;";
+                
+                try
+                {
+                    await alterCommand.ExecuteNonQueryAsync();
+                    Log.Information("Тип колонки {ColumnName} изменен на timestamp without time zone", columnName);
+                }
+                catch (Exception ex)
+                {
+                    Log.Error(ex, "Ошибка при изменении типа колонки {ColumnName}", columnName);
+                    throw;
+                }
+            }
+            
+            // Восстанавливаем индекс
+            var recreateIndexCommand = connection.CreateCommand();
+            recreateIndexCommand.CommandText = @"
+                CREATE UNIQUE INDEX IF NOT EXISTS ix_notification_runs_digest_type_period_start_local_period_end_lo 
+                ON notification_runs (digest_type, period_start_local, period_end_local, time_zone_id);";
+            
+            try
+            {
+                await recreateIndexCommand.ExecuteNonQueryAsync();
+                Log.Information("Индекс восстановлен");
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Ошибка при восстановлении индекса (возможно, он уже существует)");
+            }
+        }
+        else
+        {
+            Log.Information("Типы колонок в notification_runs корректны");
+        }
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Ошибка при проверке и исправлении типов колонок в notification_runs");
         throw;
     }
 }

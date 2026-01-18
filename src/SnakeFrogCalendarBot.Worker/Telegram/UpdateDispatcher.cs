@@ -90,7 +90,18 @@ public sealed class UpdateDispatcher
 
     public Task HandleErrorAsync(ITelegramBotClient botClient, Exception exception, CancellationToken cancellationToken)
     {
-        _logger.LogError(exception, "Telegram polling error");
+        var errorMessage = exception.Message;
+        if (errorMessage.Contains("409") || errorMessage.Contains("Conflict"))
+        {
+            _logger.LogWarning(
+                exception,
+                "Telegram Bot API error 409: Другой экземпляр бота уже запущен. Убедитесь, что запущен только один экземпляр приложения. " +
+                "Остановите другие экземпляры или подождите несколько секунд перед повторным запуском.");
+        }
+        else
+        {
+            _logger.LogError(exception, "Telegram polling error");
+        }
         return Task.CompletedTask;
     }
 }

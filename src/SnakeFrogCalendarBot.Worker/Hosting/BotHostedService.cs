@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using SnakeFrogCalendarBot.Application.Abstractions.Telegram;
 using SnakeFrogCalendarBot.Worker.Telegram;
 using Telegram.Bot;
 using Telegram.Bot.Polling;
@@ -12,16 +13,19 @@ public sealed class BotHostedService : IHostedService
 {
     private readonly ITelegramBotClient _botClient;
     private readonly UpdateDispatcher _updateDispatcher;
+    private readonly ITelegramPublisher _telegramPublisher;
     private readonly ILogger<BotHostedService> _logger;
     private CancellationTokenSource? _cts;
 
     public BotHostedService(
         ITelegramBotClient botClient,
         UpdateDispatcher updateDispatcher,
+        ITelegramPublisher telegramPublisher,
         ILogger<BotHostedService> logger)
     {
         _botClient = botClient;
         _updateDispatcher = updateDispatcher;
+        _telegramPublisher = telegramPublisher;
         _logger = logger;
     }
 
@@ -41,6 +45,16 @@ public sealed class BotHostedService : IHostedService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to set bot commands menu");
+        }
+
+        try
+        {
+            await _telegramPublisher.SendMessageAsync("Бот был перезапущен", cancellationToken);
+            _logger.LogInformation("Restart notification sent to channel");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to send restart notification to channel");
         }
 
         _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);

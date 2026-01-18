@@ -21,10 +21,12 @@ public sealed class NotificationRunConfiguration : IEntityTypeConfiguration<Noti
 
         builder.Property(nr => nr.PeriodStartLocal)
             .IsRequired()
+            .HasColumnType("timestamp without time zone")
             .HasColumnName("period_start_local");
 
         builder.Property(nr => nr.PeriodEndLocal)
             .IsRequired()
+            .HasColumnType("timestamp without time zone")
             .HasColumnName("period_end_local");
 
         builder.Property(nr => nr.TimeZoneId)
@@ -38,6 +40,7 @@ public sealed class NotificationRunConfiguration : IEntityTypeConfiguration<Noti
             .HasColumnName("created_at_utc");
 
         builder.HasIndex(nr => new { nr.DigestType, nr.PeriodStartLocal, nr.PeriodEndLocal, nr.TimeZoneId })
-            .IsUnique();
+            .IsUnique()
+            .HasDatabaseName("ix_notification_runs_digest_type_period_start_local_period_end_lo");
     }
 }

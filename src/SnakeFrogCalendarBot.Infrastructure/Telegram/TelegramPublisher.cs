@@ -28,11 +28,24 @@ public sealed class TelegramPublisher : ITelegramPublisher
         {
             var chatId = new ChatId(_targetChat);
             await _botClient.SendMessage(chatId, text, cancellationToken: cancellationToken);
-            _logger.LogInformation("Digest sent to {TargetChat}", _targetChat);
+            _logger.LogInformation("Message sent to {TargetChat}", _targetChat);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to send digest to {TargetChat}", _targetChat);
+            var errorMessage = ex.Message;
+            if (errorMessage.Contains("chat not found") || errorMessage.Contains("400"))
+            {
+                _logger.LogError(
+                    ex,
+                    "Failed to send message to {TargetChat}. " +
+                    "Проверьте, что TELEGRAM_TARGET_CHAT указан правильно (формат: @channelname или -1001234567890). " +
+                    "Убедитесь, что бот добавлен в канал как администратор.",
+                    _targetChat);
+            }
+            else
+            {
+                _logger.LogError(ex, "Failed to send message to {TargetChat}", _targetChat);
+            }
             throw;
         }
     }
