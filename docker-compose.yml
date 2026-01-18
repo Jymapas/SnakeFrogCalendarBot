@@ -21,6 +21,7 @@ services:
       retries: 10
 
   bot:
+    image: snakefrogcalendarbot:latest
     container_name: snakefrogcalendarbot-worker
     build:
       context: .
@@ -30,9 +31,9 @@ services:
         condition: service_healthy
     env_file:
       - .env
-    environment:
-      TZ: ${TZ}
     restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
 
 volumes:
   postgres_data:
