@@ -83,9 +83,21 @@ public sealed class AppOptions
             throw new InvalidOperationException("POSTGRES_PORT must be a valid number.");
         }
 
-        if (dbHost == "postgres" && !IsRunningInDocker())
+        if (IsRunningInDocker())
         {
-            dbHost = "localhost";
+            if (string.IsNullOrWhiteSpace(dbHost) || 
+                dbHost.Equals("localhost", StringComparison.OrdinalIgnoreCase) ||
+                dbHost.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase))
+            {
+                dbHost = "postgres";
+            }
+        }
+        else
+        {
+            if (dbHost == "postgres")
+            {
+                dbHost = "localhost";
+            }
         }
 
         var connectionString = string.IsNullOrWhiteSpace(dbPassword)
