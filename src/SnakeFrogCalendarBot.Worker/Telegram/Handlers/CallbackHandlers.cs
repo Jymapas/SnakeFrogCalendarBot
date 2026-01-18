@@ -632,7 +632,7 @@ public sealed class CallbackHandlers
 
         if (callbackQuery.Message is not null)
         {
-            await _botClient.EditMessageTextAsync(
+            await _botClient.EditMessageText(
                 callbackQuery.Message.Chat.Id,
                 callbackQuery.Message.MessageId,
                 text,
@@ -677,9 +677,8 @@ public sealed class CallbackHandlers
         var chatId = callbackQuery.Message?.Chat.Id ?? callbackQuery.From!.Id;
         var virtualMessage = new Message
         {
-            MessageId = 0,
             From = callbackQuery.From,
-            Date = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            Date = DateTime.UtcNow,
             Chat = new Chat { Id = chatId, Type = ChatType.Private },
             Text = command
         };
