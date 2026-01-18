@@ -17,6 +17,25 @@ cd /opt/SnakeFrogCalendarBot
 nano .env
 ```
 
+**Важно**: В файле `.env` должны быть заданы следующие переменные для PostgreSQL:
+- `POSTGRES_DB` - имя базы данных
+- `POSTGRES_USER` - имя пользователя
+- `POSTGRES_PASSWORD` - пароль (обязательно, не может быть пустым)
+- `POSTGRES_PORT` - порт (по умолчанию 5432)
+
+Пример минимальной конфигурации PostgreSQL в `.env`:
+```env
+POSTGRES_DB=calendarbot
+POSTGRES_USER=calendarbot
+POSTGRES_PASSWORD=your_secure_password_here
+POSTGRES_PORT=5432
+```
+
+**Примечание**: Если вы хотите использовать PostgreSQL без пароля (только для разработки), установите:
+```env
+POSTGRES_HOST_AUTH_METHOD=trust
+```
+
 ### 2. Сборка Docker-образов
 
 ```bash
@@ -130,6 +149,49 @@ sudo systemctl start snakefrogcalendarbot
 - `./redeploy.sh` - использует текущую директорию и образ `snakefrogcalendarbot:latest`
 - `./redeploy.sh /opt/SnakeFrogCalendarBot` - указать путь к проекту
 - `./redeploy.sh /opt/SnakeFrogCalendarBot snakefrogcalendarbot:latest` - указать путь и имя образа
+
+## Диагностика проблем
+
+### Проблема: PostgreSQL не запускается
+
+Если контейнер `snakefrogcalendarbot-postgres` завершается с ошибкой:
+
+```bash
+# Проверить логи PostgreSQL
+docker compose logs postgres
+
+# Проверить, занят ли порт 5432
+sudo netstat -tulpn | grep 5432
+# или
+sudo ss -tulpn | grep 5432
+
+# Проверить переменные окружения в .env
+cat .env | grep POSTGRES
+```
+
+**Возможные решения:**
+
+1. **Порт занят**: Измените `POSTGRES_PORT` в `.env` на другой порт (например, `5433`)
+2. **Неправильные переменные**: Убедитесь, что в `.env` заданы:
+   - `POSTGRES_DB`
+   - `POSTGRES_USER`
+   - `POSTGRES_PASSWORD` (может быть пустым)
+   - `POSTGRES_PORT` (по умолчанию 5432)
+3. **Проблемы с volume**: Удалите volume и создайте заново:
+   ```bash
+   docker compose down -v
+   docker compose up -d
+   ```
+
+### Проблема: Бот не запускается
+
+```bash
+# Проверить логи бота
+docker compose logs bot
+
+# Проверить статус контейнеров
+docker compose ps
+```
 
 ## Важные замечания
 

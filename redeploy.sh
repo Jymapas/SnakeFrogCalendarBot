@@ -18,14 +18,25 @@ fi
 
 pushd "$PROJECT_DIR" >/dev/null
 
+# Проверка наличия необходимых файлов
+if [ ! -f "docker-compose.yml" ]; then
+  echo "Ошибка: docker-compose.yml не найден в $PROJECT_DIR"
+  exit 1
+fi
+
+if [ ! -f "src/SnakeFrogCalendarBot.Worker/Dockerfile" ]; then
+  echo "Ошибка: Dockerfile не найден в $PROJECT_DIR/src/SnakeFrogCalendarBot.Worker/Dockerfile"
+  exit 1
+fi
+
 echo "[1/3] Останавливаю стек..."
 $COMPOSE down || true
 
 echo "[2/3] Собираю образ без кеша: $IMAGE ..."
-docker build --no-cache -t "$IMAGE" -f src/SnakeFrogCalendarBot.Worker/Dockerfile .
+$COMPOSE build --no-cache bot
 
-echo "[3/3] Поднимаю стек в фоне (с пересборкой сервисов)..."
-$COMPOSE up -d --build
+echo "[3/3] Поднимаю стек в фоне..."
+$COMPOSE up -d
 
 popd >/dev/null
 echo "Готово ✅"
