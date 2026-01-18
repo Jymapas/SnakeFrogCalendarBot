@@ -435,7 +435,7 @@ public sealed class MessageHandlers
                     {
                         await _botClient.SendMessage(
                             message.Chat.Id,
-                            "Не удалось распознать формат. Используйте:\nНазвание\nдата/время [разовое|ежегодное]\n[описание]\n[место]\n[ссылка]\n\nИли введите название для пошагового ввода",
+                            "Не удалось распознать формат. Используйте:\nНазвание\nдата/время [разовое|ежегодное]\n[описание]\n[место]\n[ссылка]\n\nМожно использовать маркеры: место:, ссылка:, описание:\nСсылки определяются автоматически\n\nИли введите название для пошагового ввода",
                             cancellationToken: cancellationToken);
                         return;
                     }
@@ -1210,30 +1210,59 @@ public sealed class MessageHandlers
 
         eventData.Kind = kind;
 
-        if (lines.Length >= 3)
+        for (int i = 2; i < lines.Length; i++)
         {
-            eventData.Description = lines[2];
-            if (string.IsNullOrWhiteSpace(eventData.Description))
+            var line = lines[i];
+            if (string.IsNullOrWhiteSpace(line))
             {
-                eventData.Description = null;
+                continue;
             }
-        }
 
-        if (lines.Length >= 4)
-        {
-            eventData.Place = lines[3];
-            if (string.IsNullOrWhiteSpace(eventData.Place))
+            var lowerLine = line.ToLowerInvariant();
+
+            if (lowerLine.StartsWith("место:") || lowerLine.StartsWith("place:"))
             {
-                eventData.Place = null;
+                var place = line.Substring(line.IndexOf(':') + 1).Trim();
+                if (!string.IsNullOrWhiteSpace(place))
+                {
+                    eventData.Place = place;
+                }
             }
-        }
-
-        if (lines.Length >= 5)
-        {
-            eventData.Link = lines[4];
-            if (string.IsNullOrWhiteSpace(eventData.Link))
+            else if (lowerLine.StartsWith("ссылка:") || lowerLine.StartsWith("link:"))
             {
-                eventData.Link = null;
+                var link = line.Substring(line.IndexOf(':') + 1).Trim();
+                if (!string.IsNullOrWhiteSpace(link))
+                {
+                    eventData.Link = link;
+                }
+            }
+            else if (lowerLine.StartsWith("описание:") || lowerLine.StartsWith("description:"))
+            {
+                var description = line.Substring(line.IndexOf(':') + 1).Trim();
+                if (!string.IsNullOrWhiteSpace(description))
+                {
+                    eventData.Description = description;
+                }
+            }
+            else if (Uri.TryCreate(line, UriKind.Absolute, out var uri) && 
+                     (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
+            {
+                eventData.Link = line;
+            }
+            else
+            {
+                if (eventData.Description is null)
+                {
+                    eventData.Description = line;
+                }
+                else if (eventData.Place is null)
+                {
+                    eventData.Place = line;
+                }
+                else if (eventData.Link is null)
+                {
+                    eventData.Link = line;
+                }
             }
         }
 

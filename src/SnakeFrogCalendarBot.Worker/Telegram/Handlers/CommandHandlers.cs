@@ -223,7 +223,7 @@ public sealed class CommandHandlers
         await _conversationRepository.UpsertAsync(state, cancellationToken);
         await _botClient.SendMessage(
             message.Chat.Id,
-            "Введите название события\n\nИли отправьте многострочное сообщение:\nНазвание\nдата/время [разовое|ежегодное]\n[описание]\n[место]\n[ссылка]",
+            "Введите название события\n\nИли отправьте многострочное сообщение:\nНазвание\nдата/время [разовое|ежегодное]\n[описание]\n[место]\n[ссылка]\n\nМожно использовать маркеры: место:, ссылка:, описание:\nСсылки определяются автоматически",
             cancellationToken: cancellationToken);
     }
 
