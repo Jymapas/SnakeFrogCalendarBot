@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using SnakeFrogCalendarBot.Worker.Telegram;
 using Telegram.Bot;
 using Telegram.Bot.Polling;
+using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 
 namespace SnakeFrogCalendarBot.Worker.Hosting;
@@ -24,9 +25,23 @@ public sealed class BotHostedService : IHostedService
         _logger = logger;
     }
 
-    public Task StartAsync(CancellationToken cancellationToken)
+    public async Task StartAsync(CancellationToken cancellationToken)
     {
         _logger.LogInformation("Starting Telegram long polling");
+
+        try
+        {
+            var commands = BotCommands.AsBotCommands();
+            await _botClient.SetMyCommands(
+                commands,
+                scope: new BotCommandScopeAllPrivateChats(),
+                cancellationToken: cancellationToken);
+            _logger.LogInformation("Bot commands menu set for private chats");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to set bot commands menu");
+        }
 
         _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var receiverOptions = new ReceiverOptions
@@ -39,8 +54,6 @@ public sealed class BotHostedService : IHostedService
             _updateDispatcher.HandleErrorAsync,
             receiverOptions,
             _cts.Token);
-
-        return Task.CompletedTask;
     }
 
     public Task StopAsync(CancellationToken cancellationToken)
