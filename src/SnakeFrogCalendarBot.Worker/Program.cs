@@ -215,7 +215,7 @@ try
                 
                 var checkUserCommand = adminConnection.CreateCommand();
                 checkUserCommand.CommandText = "SELECT 1 FROM pg_roles WHERE rolname = $1";
-                checkUserCommand.Parameters.AddWithValue(userName);
+                checkUserCommand.Parameters.AddWithValue(userName ?? (object)DBNull.Value);
                 var userExists = await checkUserCommand.ExecuteScalarAsync() != null;
                 Log.Debug("Пользователь {UserName} существует: {Exists}", userName, userExists);
 
@@ -236,7 +236,7 @@ try
 
                 var checkDbCommand = adminConnection.CreateCommand();
                 checkDbCommand.CommandText = "SELECT 1 FROM pg_database WHERE datname = $1";
-                checkDbCommand.Parameters.AddWithValue(databaseName);
+                checkDbCommand.Parameters.AddWithValue(databaseName ?? (object)DBNull.Value);
                 var dbExists = await checkDbCommand.ExecuteScalarAsync() != null;
                 Log.Debug("База данных {DatabaseName} существует: {Exists}", databaseName, dbExists);
 
