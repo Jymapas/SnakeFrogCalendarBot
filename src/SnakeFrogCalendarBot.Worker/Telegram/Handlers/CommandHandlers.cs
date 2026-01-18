@@ -409,13 +409,13 @@ public sealed class CommandHandlers
     {
         var isStart = message.Text?.Trim() == BotCommands.Start;
         var text = isStart 
-            ? "Добро пожаловать! Выберите действие:"
-            : "Выберите действие:";
+            ? "Добро пожаловать! Используйте клавиатуру для быстрого доступа к функциям."
+            : "Используйте клавиатуру для быстрого доступа к функциям.";
         
         await _botClient.SendMessage(
             message.Chat.Id,
             text,
-            replyMarkup: InlineKeyboards.MainMenu(),
+            replyMarkup: ReplyKeyboards.MainKeyboard(),
             cancellationToken: cancellationToken);
     }
 }
