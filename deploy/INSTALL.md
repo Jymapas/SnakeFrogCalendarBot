@@ -80,6 +80,26 @@ sudo systemctl disable snakefrogcalendarbot
 
 ## Обновление приложения
 
+### Способ 1: Использование скрипта redeploy.sh (рекомендуется)
+
+```bash
+cd /opt/SnakeFrogCalendarBot
+
+# Остановить systemd сервис (если используется)
+sudo systemctl stop snakefrogcalendarbot
+
+# Обновить код (git pull или копирование файлов)
+git pull  # или другой способ обновления
+
+# Запустить скрипт пересборки и деплоя
+./redeploy.sh
+
+# Запустить systemd сервис обратно (если используется)
+sudo systemctl start snakefrogcalendarbot
+```
+
+### Способ 2: Ручная пересборка
+
 ```bash
 cd /opt/SnakeFrogCalendarBot
 
@@ -98,6 +118,18 @@ sudo systemctl restart snakefrogcalendarbot
 # Запустить сервис
 sudo systemctl start snakefrogcalendarbot
 ```
+
+### Использование redeploy.sh
+
+Скрипт `redeploy.sh` автоматически:
+1. Останавливает текущий стек
+2. Собирает образ без кеша
+3. Поднимает стек заново
+
+Параметры:
+- `./redeploy.sh` - использует текущую директорию и образ `snakefrogcalendarbot:latest`
+- `./redeploy.sh /opt/SnakeFrogCalendarBot` - указать путь к проекту
+- `./redeploy.sh /opt/SnakeFrogCalendarBot snakefrogcalendarbot:latest` - указать путь и имя образа
 
 ## Важные замечания
 
