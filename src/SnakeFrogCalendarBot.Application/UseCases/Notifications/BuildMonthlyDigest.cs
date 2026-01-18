@@ -122,7 +122,8 @@ public sealed class BuildMonthlyDigest
                     Type = CalendarItemType.Birthday,
                     IsAllDay = true,
                     HasAttachment = false,
-                    BirthYear = birthday.BirthYear
+                    BirthYear = birthday.BirthYear,
+                    Contact = birthday.Contact
                 });
             }
         }

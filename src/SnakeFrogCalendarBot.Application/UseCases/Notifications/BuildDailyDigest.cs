@@ -120,7 +120,8 @@ public sealed class BuildDailyDigest
                     Type = CalendarItemType.Birthday,
                     IsAllDay = true,
                     HasAttachment = false,
-                    BirthYear = birthday.BirthYear
+                    BirthYear = birthday.BirthYear,
+                    Contact = birthday.Contact
                 });
             }
         }

@@ -45,6 +45,11 @@ public sealed class DigestFormatter
                         builder.Append(age);
                         builder.Append(")");
                     }
+                    if (!string.IsNullOrWhiteSpace(item.Contact))
+                    {
+                        builder.Append(" — ");
+                        builder.Append(item.Contact);
+                    }
                 }
                 else
                 {
@@ -112,6 +117,11 @@ public sealed class DigestFormatter
                         builder.Append(age);
                         builder.Append(")");
                     }
+                    if (!string.IsNullOrWhiteSpace(item.Contact))
+                    {
+                        builder.Append(" — ");
+                        builder.Append(item.Contact);
+                    }
                 }
                 else
                 {
@@ -175,6 +185,11 @@ public sealed class DigestFormatter
                         builder.Append(" (");
                         builder.Append(age);
                         builder.Append(")");
+                    }
+                    if (!string.IsNullOrWhiteSpace(item.Contact))
+                    {
+                        builder.Append(" — ");
+                        builder.Append(item.Contact);
                     }
                 }
                 else
