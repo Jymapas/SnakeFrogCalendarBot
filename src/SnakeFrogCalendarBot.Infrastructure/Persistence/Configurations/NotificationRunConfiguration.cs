@@ -40,6 +40,7 @@ public sealed class NotificationRunConfiguration : IEntityTypeConfiguration<Noti
             .HasColumnName("created_at_utc");
 
         builder.HasIndex(nr => new { nr.DigestType, nr.PeriodStartLocal, nr.PeriodEndLocal, nr.TimeZoneId })
-            .IsUnique();
+            .IsUnique()
+            .HasDatabaseName("ix_notification_runs_digest_type_period_start_local_period_end_lo");
     }
 }
