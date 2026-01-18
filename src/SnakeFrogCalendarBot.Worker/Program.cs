@@ -166,7 +166,7 @@ try
                 q.AddTrigger(opts => opts
                     .ForJob(dailyJobKey)
                     .WithIdentity("DailyDigestTrigger")
-                    .WithCronSchedule("0 55 19 ? * *")); // 19:41 для теста (было: 0 0 9 ? * *)
+                    .WithCronSchedule("0 46 20 ? * *")); // 19:41 для теста (было: 0 0 9 ? * *)
 
                 var weeklyJobKey = new JobKey("WeeklyDigestJob");
                 q.AddJob<WeeklyDigestJob>(weeklyJobKey);
