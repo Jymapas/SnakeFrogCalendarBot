@@ -166,7 +166,7 @@ try
                 q.AddTrigger(opts => opts
                     .ForJob(dailyJobKey)
                     .WithIdentity("DailyDigestTrigger")
-                    .WithCronSchedule("0 46 20 ? * *")); // 19:41 для теста (было: 0 0 9 ? * *)
+                    .WithCronSchedule("0 0 9 ? * *"));
 
                 var weeklyJobKey = new JobKey("WeeklyDigestJob");
                 q.AddJob<WeeklyDigestJob>(weeklyJobKey);
@@ -383,6 +383,8 @@ try
             Log.Information("Таблица notification_runs существует: {Exists}", notificationRunsExist);
             if (notificationRunsExist)
             {
+                Log.Information("Проверка и исправление структуры таблицы notification_runs...");
+                await EnsureNotificationRunStructureAsync(dbContext);
                 Log.Information("Проверка и исправление типа колонок в таблице notification_runs...");
                 await EnsureNotificationRunColumnsTypeAsync(dbContext);
             }
@@ -855,6 +857,112 @@ static async Task EnsureAttachmentColumnsExistAsync(CalendarDbContext dbContext)
     catch (Exception ex)
     {
         Log.Error(ex, "Ошибка при добавлении недостающих колонок в таблице attachments: {Message}", ex.Message);
+        throw;
+    }
+}
+
+static async Task EnsureNotificationRunStructureAsync(CalendarDbContext dbContext)
+{
+    try
+    {
+        var connection = dbContext.Database.GetDbConnection();
+        if (connection.State != ConnectionState.Open)
+        {
+            await connection.OpenAsync();
+        }
+        
+        var checkColumnsCommand = connection.CreateCommand();
+        checkColumnsCommand.CommandText = @"
+            SELECT column_name
+            FROM information_schema.columns 
+            WHERE table_schema = 'public' 
+            AND table_name = 'notification_runs' 
+            ORDER BY column_name";
+        
+        var existingColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        using (var reader = await checkColumnsCommand.ExecuteReaderAsync())
+        {
+            while (await reader.ReadAsync())
+            {
+                existingColumns.Add(reader.GetString(0));
+            }
+        }
+        
+        var requiredColumns = new Dictionary<string, string>
+        {
+            ["digest_type"] = "INTEGER NOT NULL DEFAULT 0",
+            ["period_start_local"] = "TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT '1970-01-01 00:00:00'::timestamp",
+            ["period_end_local"] = "TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT '1970-01-01 00:00:00'::timestamp",
+            ["time_zone_id"] = "VARCHAR(100) NOT NULL DEFAULT ''",
+            ["created_at_utc"] = "TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()"
+        };
+        
+        var missingColumns = new List<string>();
+        foreach (var (colName, _) in requiredColumns)
+        {
+            if (!existingColumns.Contains(colName))
+            {
+                missingColumns.Add(colName);
+            }
+        }
+        
+        if (missingColumns.Any())
+        {
+            Log.Information("Добавление недостающих колонок в notification_runs: {Columns}", string.Join(", ", missingColumns));
+            
+            foreach (var colName in missingColumns)
+            {
+                var colDef = requiredColumns[colName];
+                var addCmd = connection.CreateCommand();
+                addCmd.CommandText = $@"
+                    DO $$
+                    BEGIN
+                        IF NOT EXISTS (
+                            SELECT 1 FROM information_schema.columns 
+                            WHERE table_schema = 'public' 
+                            AND table_name = 'notification_runs' 
+                            AND column_name = '{colName}'
+                        ) THEN
+                            ALTER TABLE notification_runs ADD COLUMN {colName} {colDef};
+                        END IF;
+                    END $$;";
+                
+                try
+                {
+                    await addCmd.ExecuteNonQueryAsync();
+                    Log.Information("Колонка {ColumnName} добавлена в notification_runs", colName);
+                }
+                catch (Exception addEx)
+                {
+                    Log.Error(addEx, "Ошибка при добавлении колонки {ColumnName}", colName);
+                    throw;
+                }
+            }
+            
+            var recreateIndexCmd = connection.CreateCommand();
+            recreateIndexCmd.CommandText = @"
+                DROP INDEX IF EXISTS ix_notification_runs_digest_type_period_start_local_period_end_lo CASCADE;
+                CREATE UNIQUE INDEX IF NOT EXISTS ix_notification_runs_digest_type_period_start_local_period_end_lo 
+                ON notification_runs (digest_type, period_start_local, period_end_local, time_zone_id);";
+            
+            try
+            {
+                await recreateIndexCmd.ExecuteNonQueryAsync();
+                Log.Information("Уникальный индекс восстановлен");
+            }
+            catch (Exception idxEx)
+            {
+                Log.Warning(idxEx, "Ошибка при восстановлении индекса");
+            }
+        }
+        else
+        {
+            Log.Information("Все необходимые колонки присутствуют в notification_runs");
+        }
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Ошибка при проверке и исправлении структуры notification_runs");
         throw;
     }
 }
