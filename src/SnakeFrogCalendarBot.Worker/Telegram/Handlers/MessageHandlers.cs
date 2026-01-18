@@ -423,6 +423,24 @@ public sealed class MessageHandlers
         switch (state.Step)
         {
             case EventConversationSteps.Title:
+                var isMultiline = text.Contains('\n');
+                if (isMultiline)
+                {
+                    if (TryParseMultilineEvent(text, out var parsedEventData))
+                    {
+                        await SaveEventFromDataAsync(message, parsedEventData, cancellationToken);
+                        return;
+                    }
+                    else
+                    {
+                        await _botClient.SendMessage(
+                            message.Chat.Id,
+                            "Не удалось распознать формат. Используйте:\nНазвание\nдата/время [разовое|ежегодное]\n[описание]\n[место]\n[ссылка]\n\nИли введите название для пошагового ввода",
+                            cancellationToken: cancellationToken);
+                        return;
+                    }
+                }
+
                 data.Title = text;
                 await UpdateEventStateAsync(state, EventConversationSteps.Date, data, now, cancellationToken);
                 await _botClient.SendMessage(
@@ -1147,6 +1165,202 @@ public sealed class MessageHandlers
             }
         }
         return false;
+    }
+
+    private bool TryParseMultilineEvent(string text, out EventConversationData eventData)
+    {
+        eventData = new EventConversationData();
+
+        var lines = text.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(l => l.Trim())
+            .Where(l => !string.IsNullOrWhiteSpace(l))
+            .ToArray();
+
+        if (lines.Length < 2)
+        {
+            return false;
+        }
+
+        eventData.Title = lines[0];
+        if (string.IsNullOrWhiteSpace(eventData.Title))
+        {
+            return false;
+        }
+
+        var dateTimeLine = lines[1];
+        var kind = ExtractEventKindFromLine(dateTimeLine, out var dateTimeString);
+
+        if (!_dateTimeParser.TryParse(dateTimeString, out var parseResult) || parseResult is null)
+        {
+            return false;
+        }
+
+        eventData.Year = parseResult.Year;
+        eventData.Month = parseResult.Month;
+        eventData.Day = parseResult.Day;
+        eventData.Hour = parseResult.Hour;
+        eventData.Minute = parseResult.Minute;
+        eventData.HasYear = parseResult.HasYear;
+        eventData.IsAllDay = !parseResult.Hour.HasValue || !parseResult.Minute.HasValue;
+
+        if (kind is null)
+        {
+            kind = parseResult.HasYear ? "OneOff" : "Yearly";
+        }
+
+        eventData.Kind = kind;
+
+        if (lines.Length >= 3)
+        {
+            eventData.Description = lines[2];
+            if (string.IsNullOrWhiteSpace(eventData.Description))
+            {
+                eventData.Description = null;
+            }
+        }
+
+        if (lines.Length >= 4)
+        {
+            eventData.Place = lines[3];
+            if (string.IsNullOrWhiteSpace(eventData.Place))
+            {
+                eventData.Place = null;
+            }
+        }
+
+        if (lines.Length >= 5)
+        {
+            eventData.Link = lines[4];
+            if (string.IsNullOrWhiteSpace(eventData.Link))
+            {
+                eventData.Link = null;
+            }
+        }
+
+        return true;
+    }
+
+    private static string? ExtractEventKindFromLine(string line, out string dateTimeString)
+    {
+        dateTimeString = line;
+        var lowerLine = line.ToLowerInvariant();
+
+        var kindKeywords = new[]
+        {
+            ("разов", "OneOff"),
+            ("разовое", "OneOff"),
+            ("one", "OneOff"),
+            ("oneoff", "OneOff"),
+            ("ежегод", "Yearly"),
+            ("ежегодное", "Yearly"),
+            ("yearly", "Yearly")
+        };
+
+        foreach (var (keyword, kind) in kindKeywords)
+        {
+            var index = lowerLine.IndexOf(keyword, StringComparison.OrdinalIgnoreCase);
+            if (index >= 0)
+            {
+                dateTimeString = line.Remove(index).Trim();
+                if (string.IsNullOrWhiteSpace(dateTimeString))
+                {
+                    continue;
+                }
+                return kind;
+            }
+        }
+
+        return null;
+    }
+
+    private async Task SaveEventFromDataAsync(Message message, EventConversationData data, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(data.Title) || data.Month is null || data.Day is null || data.Kind is null)
+        {
+            await _conversationRepository.DeleteAsync(message.From!.Id, cancellationToken);
+            await _botClient.SendMessage(
+                message.Chat.Id,
+                "Не удалось сохранить событие. Проверьте формат",
+                cancellationToken: cancellationToken);
+            return;
+        }
+
+        var timeZone = DateTimeZoneProviders.Tzdb[_timeZoneProvider.GetTimeZoneId()];
+        var now = _clock.UtcNow;
+
+        CreateEventCommand command;
+
+        if (data.Kind == "OneOff")
+        {
+            if (data.Year is null || data.Month is null || data.Day is null)
+            {
+                await _conversationRepository.DeleteAsync(message.From!.Id, cancellationToken);
+                await _botClient.SendMessage(
+                    message.Chat.Id,
+                    "Для разового события требуется указать год",
+                    cancellationToken: cancellationToken);
+                return;
+            }
+
+            var localDate = new LocalDate(data.Year.Value, data.Month.Value, data.Day.Value);
+            LocalDateTime localDateTime;
+
+            if (data.IsAllDay == true)
+            {
+                localDateTime = localDate.AtMidnight();
+            }
+            else
+            {
+                var time = data.Hour.HasValue && data.Minute.HasValue
+                    ? new LocalTime(data.Hour.Value, data.Minute.Value)
+                    : LocalTime.Midnight;
+                localDateTime = localDate.At(time);
+            }
+
+            var zonedDateTime = localDateTime.InZoneLeniently(timeZone);
+            var instant = zonedDateTime.ToInstant();
+            var occursAtUtc = instant.ToDateTimeOffset();
+
+            command = new CreateEventCommand(
+                data.Title,
+                EventKind.OneOff,
+                data.IsAllDay == true,
+                occursAtUtc,
+                null,
+                null,
+                null,
+                data.Description,
+                data.Place,
+                data.Link);
+        }
+        else
+        {
+            TimeSpan? timeOfDay = null;
+            if (!data.IsAllDay!.Value && data.Hour.HasValue && data.Minute.HasValue)
+            {
+                timeOfDay = new TimeSpan(data.Hour.Value, data.Minute.Value, 0);
+            }
+
+            command = new CreateEventCommand(
+                data.Title,
+                EventKind.Yearly,
+                data.IsAllDay == true,
+                null,
+                data.Month,
+                data.Day,
+                timeOfDay,
+                data.Description,
+                data.Place,
+                data.Link);
+        }
+
+        await _createEvent.ExecuteAsync(command, cancellationToken);
+        await _conversationRepository.DeleteAsync(message.From!.Id, cancellationToken);
+
+        await _botClient.SendMessage(
+            message.Chat.Id,
+            "Событие сохранено",
+            cancellationToken: cancellationToken);
     }
 
     private static bool IsSkip(string text)
