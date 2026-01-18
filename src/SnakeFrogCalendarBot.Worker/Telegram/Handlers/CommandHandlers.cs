@@ -231,14 +231,14 @@ public sealed class CommandHandlers
     {
         var events = await _listUpcomingItems.ExecuteAsync(cancellationToken);
         
-        var eventAttachmentCount = new Dictionary<int, int>();
+        var eventAttachments = new Dictionary<int, Attachment?>();
         foreach (var eventEntity in events)
         {
-            var attachments = await _attachmentRepository.GetByEventIdAsync(eventEntity.Id, cancellationToken);
-            eventAttachmentCount[eventEntity.Id] = attachments.Count;
+            var currentAttachment = await _attachmentRepository.GetCurrentByEventIdAsync(eventEntity.Id, cancellationToken);
+            eventAttachments[eventEntity.Id] = currentAttachment;
         }
 
-        var text = _eventFormatter.Format(events, eventAttachmentCount);
+        var text = _eventFormatter.Format(events, eventAttachments);
         var inlineKeyboard = await CreateEventListInlineKeyboard(events, cancellationToken);
 
         await _botClient.SendMessage(
@@ -256,16 +256,17 @@ public sealed class CommandHandlers
 
         foreach (var eventEntity in events)
         {
-            var attachments = await _attachmentRepository.GetByEventIdAsync(eventEntity.Id, cancellationToken);
-            var hasFiles = attachments.Count > 0;
+            var currentAttachment = await _attachmentRepository.GetCurrentByEventIdAsync(eventEntity.Id, cancellationToken);
+            var hasFile = currentAttachment != null;
 
             var row = new List<InlineKeyboardButton>
             {
                 InlineKeyboardButton.WithCallbackData("📎 Добавить файл", $"event_attach:{eventEntity.Id}")
             };
 
-            if (hasFiles)
+            if (hasFile)
             {
+                row.Add(InlineKeyboardButton.WithCallbackData("📥 Скачать файл", $"event_download_file:{eventEntity.Id}"));
                 row.Add(InlineKeyboardButton.WithCallbackData("♻️ Заменить файл", $"event_replace_file:{eventEntity.Id}"));
             }
 

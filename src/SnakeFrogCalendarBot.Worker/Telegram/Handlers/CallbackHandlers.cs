@@ -5,6 +5,7 @@ using SnakeFrogCalendarBot.Application.UseCases.Events;
 using SnakeFrogCalendarBot.Domain.Entities;
 using Telegram.Bot;
 using Telegram.Bot.Types;
+using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.ReplyMarkups;
 
 namespace SnakeFrogCalendarBot.Worker.Telegram.Handlers;
@@ -52,7 +53,59 @@ public sealed class CallbackHandlers
 
         var data = callbackQuery.Data;
 
-        if (data.StartsWith("event_attach:") || data.StartsWith("event_replace_file:"))
+        if (data.StartsWith("event_download_file:"))
+        {
+            var eventIdStr = data.Contains(':') ? data.Split(':')[1] : null;
+            if (!int.TryParse(eventIdStr, out var eventId))
+            {
+                await _botClient.AnswerCallbackQuery(
+                    callbackQuery.Id,
+                    "Ошибка: неверный идентификатор события",
+                    cancellationToken: cancellationToken);
+                return;
+            }
+
+            var eventWithAttachment = await _getEventWithAttachment.ExecuteAsync(eventId, cancellationToken);
+            if (eventWithAttachment is null)
+            {
+                await _botClient.AnswerCallbackQuery(
+                    callbackQuery.Id,
+                    "Событие не найдено",
+                    cancellationToken: cancellationToken);
+                return;
+            }
+
+            var currentAttachment = eventWithAttachment.Attachments.FirstOrDefault(a => a.IsCurrent);
+            if (currentAttachment is null)
+            {
+                await _botClient.AnswerCallbackQuery(
+                    callbackQuery.Id,
+                    "Файл не найден",
+                    cancellationToken: cancellationToken);
+                return;
+            }
+
+            await _botClient.AnswerCallbackQuery(
+                callbackQuery.Id,
+                cancellationToken: cancellationToken);
+
+            try
+            {
+                await _botClient.SendMessage(
+                    callbackQuery.Message!.Chat.Id,
+                    $"📎 Файл: {currentAttachment.FileName}\n\nДля скачивания используйте file_id: `{currentAttachment.TelegramFileId}`",
+                    parseMode: ParseMode.MarkdownV2,
+                    cancellationToken: cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                await _botClient.SendMessage(
+                    callbackQuery.Message!.Chat.Id,
+                    $"Ошибка: {ex.Message}",
+                    cancellationToken: cancellationToken);
+            }
+        }
+        else if (data.StartsWith("event_attach:") || data.StartsWith("event_replace_file:"))
         {
             var isReplace = data.StartsWith("event_replace_file:");
             var eventIdStr = data.Contains(':') ? data.Split(':')[1] : null;

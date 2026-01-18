@@ -355,6 +355,38 @@ try
             Log.Information("Таблица attachments существует: {Exists}", attachmentsExist);
             if (attachmentsExist)
             {
+                Log.Information("Принудительное удаление устаревших колонок из attachments...");
+                try
+                {
+                    await ForceAddAttachmentColumnsAsync(dbContext);
+                }
+                catch (Exception forceEx)
+                {
+                    Log.Warning(forceEx, "Не удалось принудительно обновить колонки в attachments");
+                }
+                
+                var finalCheckCommand = dbContext.Database.GetDbConnection().CreateCommand();
+                if (dbContext.Database.GetDbConnection().State != ConnectionState.Open)
+                {
+                    await dbContext.Database.GetDbConnection().OpenAsync();
+                }
+                finalCheckCommand.CommandText = @"
+                    SELECT column_name, data_type, is_nullable
+                    FROM information_schema.columns 
+                    WHERE table_schema = 'public' 
+                    AND table_name = 'attachments' 
+                    ORDER BY column_name";
+                
+                var allColumns = new List<string>();
+                using (var reader = await finalCheckCommand.ExecuteReaderAsync())
+                {
+                    while (await reader.ReadAsync())
+                    {
+                        allColumns.Add($"{reader.GetString(0)} ({reader.GetString(1)}, nullable: {reader.GetString(2)})");
+                    }
+                }
+                Log.Information("Финальная структура таблицы attachments: {Columns}", string.Join(", ", allColumns));
+                
                 Log.Information("Проверка и добавление недостающих колонок в таблице attachments...");
                 try
                 {
@@ -566,6 +598,37 @@ static async Task CreateTablesManuallyAsync(CalendarDbContext dbContext)
         await command.ExecuteNonQueryAsync();
         Log.Information("Таблицы созданы вручную через SQL");
         
+        var dropOldColumnsCommand = connection.CreateCommand();
+        dropOldColumnsCommand.CommandText = @"
+            DO $$
+            BEGIN
+                IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'attachments' AND column_name = 'file_id') THEN
+                    ALTER TABLE attachments DROP COLUMN file_id CASCADE;
+                END IF;
+                IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'attachments' AND column_name = 'file_type') THEN
+                    ALTER TABLE attachments DROP COLUMN file_type CASCADE;
+                END IF;
+                IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'attachments' AND column_name = 'file_size') THEN
+                    ALTER TABLE attachments DROP COLUMN file_size CASCADE;
+                END IF;
+                IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'attachments' AND column_name = 'created_at_utc') THEN
+                    ALTER TABLE attachments DROP COLUMN created_at_utc CASCADE;
+                END IF;
+                IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'attachments' AND column_name = 'updated_at_utc') THEN
+                    ALTER TABLE attachments DROP COLUMN updated_at_utc CASCADE;
+                END IF;
+            END $$;";
+        
+        try
+        {
+            await dropOldColumnsCommand.ExecuteNonQueryAsync();
+            Log.Information("Удаление устаревших колонок из attachments выполнено");
+        }
+        catch (Exception dropEx)
+        {
+            Log.Warning(dropEx, "Ошибка при удалении устаревших колонок (возможно, их уже нет)");
+        }
+        
         var alterCommand = connection.CreateCommand();
         alterCommand.CommandText = @"
             DO $$
@@ -652,6 +715,9 @@ static async Task EnsureAttachmentColumnsExistAsync(CalendarDbContext dbContext)
             await connection.OpenAsync();
         }
         
+        var dropCommands = new List<string>();
+        var addCommands = new List<string>();
+        
         var checkCommand = connection.CreateCommand();
         checkCommand.CommandText = @"
             SELECT column_name 
@@ -671,42 +737,81 @@ static async Task EnsureAttachmentColumnsExistAsync(CalendarDbContext dbContext)
         
         Log.Information("Существующие колонки в таблице attachments: {Columns}", string.Join(", ", existingColumns));
         
-        var alterCommand = connection.CreateCommand();
-        var alterStatements = new List<string>();
+        if (existingColumns.Contains("file_id"))
+        {
+            dropCommands.Add("ALTER TABLE attachments DROP COLUMN file_id CASCADE");
+        }
+        if (existingColumns.Contains("file_type"))
+        {
+            dropCommands.Add("ALTER TABLE attachments DROP COLUMN file_type CASCADE");
+        }
+        if (existingColumns.Contains("file_size"))
+        {
+            dropCommands.Add("ALTER TABLE attachments DROP COLUMN file_size CASCADE");
+        }
+        if (existingColumns.Contains("created_at_utc"))
+        {
+            dropCommands.Add("ALTER TABLE attachments DROP COLUMN created_at_utc CASCADE");
+        }
+        if (existingColumns.Contains("updated_at_utc"))
+        {
+            dropCommands.Add("ALTER TABLE attachments DROP COLUMN updated_at_utc CASCADE");
+        }
         
         if (!existingColumns.Contains("telegram_file_id"))
         {
-            alterStatements.Add("ALTER TABLE attachments ADD COLUMN telegram_file_id VARCHAR(200)");
+            addCommands.Add("ALTER TABLE attachments ADD COLUMN telegram_file_id VARCHAR(200)");
         }
         if (!existingColumns.Contains("telegram_file_unique_id"))
         {
-            alterStatements.Add("ALTER TABLE attachments ADD COLUMN telegram_file_unique_id VARCHAR(200)");
+            addCommands.Add("ALTER TABLE attachments ADD COLUMN telegram_file_unique_id VARCHAR(200)");
         }
         if (!existingColumns.Contains("mime_type"))
         {
-            alterStatements.Add("ALTER TABLE attachments ADD COLUMN mime_type VARCHAR(100)");
+            addCommands.Add("ALTER TABLE attachments ADD COLUMN mime_type VARCHAR(100)");
         }
         if (!existingColumns.Contains("size"))
         {
-            alterStatements.Add("ALTER TABLE attachments ADD COLUMN size BIGINT");
+            addCommands.Add("ALTER TABLE attachments ADD COLUMN size BIGINT");
         }
         if (!existingColumns.Contains("is_current"))
         {
-            alterStatements.Add("ALTER TABLE attachments ADD COLUMN is_current BOOLEAN NOT NULL DEFAULT true");
+            addCommands.Add("ALTER TABLE attachments ADD COLUMN is_current BOOLEAN NOT NULL DEFAULT true");
         }
         if (!existingColumns.Contains("uploaded_at_utc"))
         {
-            alterStatements.Add("ALTER TABLE attachments ADD COLUMN uploaded_at_utc TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()");
+            addCommands.Add("ALTER TABLE attachments ADD COLUMN uploaded_at_utc TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()");
         }
         
-        if (alterStatements.Any())
+        if (dropCommands.Any())
         {
-            alterCommand.CommandText = string.Join("; ", alterStatements) + ";";
-            Log.Information("Выполнение ALTER TABLE для добавления колонок: {Statements}", alterCommand.CommandText);
-            await alterCommand.ExecuteNonQueryAsync();
-            Log.Information("Добавлено {Count} колонок в таблицу attachments", alterStatements.Count);
+            foreach (var dropCmd in dropCommands)
+            {
+                try
+                {
+                    var dropCommand = connection.CreateCommand();
+                    dropCommand.CommandText = dropCmd;
+                    Log.Information("Удаление устаревшей колонки: {Command}", dropCmd);
+                    await dropCommand.ExecuteNonQueryAsync();
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex, "Ошибка при удалении колонки {Command}: {Message}", dropCmd, ex.Message);
+                }
+            }
+            
+            Log.Information("Завершено удаление устаревших колонок");
         }
-        else
+        
+        if (addCommands.Any())
+        {
+            var addCommand = connection.CreateCommand();
+            addCommand.CommandText = string.Join("; ", addCommands) + ";";
+            Log.Information("Выполнение ALTER TABLE для добавления колонок: {Statements}", addCommand.CommandText);
+            await addCommand.ExecuteNonQueryAsync();
+            Log.Information("Добавлено {Count} колонок в таблицу attachments", addCommands.Count);
+        }
+        else if (!dropCommands.Any())
         {
             Log.Information("Все необходимые колонки уже существуют в таблице attachments");
         }
@@ -728,7 +833,130 @@ static async Task ForceAddAttachmentColumnsAsync(CalendarDbContext dbContext)
             await connection.OpenAsync();
         }
         
-        var commands = new[]
+        var dropCommands = new[]
+        {
+            "ALTER TABLE attachments DROP COLUMN IF EXISTS file_id CASCADE",
+            "ALTER TABLE attachments DROP COLUMN IF EXISTS file_type CASCADE",
+            "ALTER TABLE attachments DROP COLUMN IF EXISTS file_size CASCADE",
+            "ALTER TABLE attachments DROP COLUMN IF EXISTS created_at_utc CASCADE",
+            "ALTER TABLE attachments DROP COLUMN IF EXISTS updated_at_utc CASCADE"
+        };
+        
+        Log.Information("Принудительное удаление устаревших колонок из attachments...");
+        foreach (var cmdText in dropCommands)
+        {
+            try
+            {
+                var command = connection.CreateCommand();
+                command.CommandText = cmdText;
+                var rowsAffected = await command.ExecuteNonQueryAsync();
+                Log.Information("Выполнено: {Command}, затронуто строк: {Rows}", cmdText, rowsAffected);
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Ошибка при выполнении команды {Command}: {Message}", cmdText, ex.Message);
+            }
+        }
+        
+        var verifyCommand = connection.CreateCommand();
+        verifyCommand.CommandText = @"
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_schema = 'public' 
+            AND table_name = 'attachments' 
+            AND column_name IN ('file_id', 'file_type', 'file_size', 'created_at_utc', 'updated_at_utc')
+            ORDER BY column_name";
+        
+        var remainingOldColumns = new List<string>();
+        using (var reader = await verifyCommand.ExecuteReaderAsync())
+        {
+            while (await reader.ReadAsync())
+            {
+                remainingOldColumns.Add(reader.GetString(0));
+            }
+        }
+        
+        if (remainingOldColumns.Any())
+        {
+            Log.Error("КРИТИЧЕСКАЯ ОШИБКА: Старые колонки все еще существуют после удаления: {Columns}. Попытка пересоздать таблицу...", string.Join(", ", remainingOldColumns));
+            
+            try
+            {
+                var checkDataCommand = connection.CreateCommand();
+                checkDataCommand.CommandText = "SELECT COUNT(*) FROM attachments";
+                var rowCount = await checkDataCommand.ExecuteScalarAsync();
+                Log.Information("Количество строк в attachments перед пересозданием: {Count}", rowCount);
+                
+                var recreateCommand = connection.CreateCommand();
+                recreateCommand.CommandText = @"
+                    CREATE TABLE attachments_new (
+                        id SERIAL PRIMARY KEY,
+                        event_id INTEGER NOT NULL,
+                        telegram_file_id VARCHAR(200) NOT NULL,
+                        telegram_file_unique_id VARCHAR(200) NOT NULL,
+                        file_name VARCHAR(500) NOT NULL,
+                        mime_type VARCHAR(100),
+                        size BIGINT,
+                        version INTEGER NOT NULL,
+                        is_current BOOLEAN NOT NULL,
+                        uploaded_at_utc TIMESTAMP WITH TIME ZONE NOT NULL,
+                        FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
+                    );
+                    
+                    INSERT INTO attachments_new (id, event_id, telegram_file_id, telegram_file_unique_id, file_name, mime_type, size, version, is_current, uploaded_at_utc)
+                    SELECT id, event_id, 
+                           COALESCE(telegram_file_id, '') as telegram_file_id,
+                           COALESCE(telegram_file_unique_id, '') as telegram_file_unique_id,
+                           file_name, mime_type, size, version, is_current, uploaded_at_utc
+                    FROM attachments;
+                    
+                    DROP TABLE attachments CASCADE;
+                    ALTER TABLE attachments_new RENAME TO attachments;
+                    
+                    CREATE INDEX IF NOT EXISTS ix_attachments_event_id_is_current ON attachments(event_id, is_current);";
+                
+                await recreateCommand.ExecuteNonQueryAsync();
+                Log.Information("Таблица attachments пересоздана без старых колонок");
+                
+                var verifyAfterCommand = connection.CreateCommand();
+                verifyAfterCommand.CommandText = @"
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_schema = 'public' 
+                    AND table_name = 'attachments' 
+                    AND column_name IN ('file_id', 'file_type', 'file_size', 'created_at_utc', 'updated_at_utc')
+                    ORDER BY column_name";
+                
+                var stillRemaining = new List<string>();
+                using (var reader = await verifyAfterCommand.ExecuteReaderAsync())
+                {
+                    while (await reader.ReadAsync())
+                    {
+                        stillRemaining.Add(reader.GetString(0));
+                    }
+                }
+                
+                if (stillRemaining.Any())
+                {
+                    Log.Error("КРИТИЧЕСКАЯ ОШИБКА: Старые колонки все еще существуют после пересоздания: {Columns}", string.Join(", ", stillRemaining));
+                }
+                else
+                {
+                    Log.Information("Подтверждено: все старые колонки удалены после пересоздания таблицы");
+                }
+            }
+            catch (Exception recreateEx)
+            {
+                Log.Error(recreateEx, "Ошибка при пересоздании таблицы attachments: {Message}", recreateEx.Message);
+                throw;
+            }
+        }
+        else
+        {
+            Log.Information("Все старые колонки успешно удалены из attachments");
+        }
+        
+        var addCommands = new[]
         {
             "ALTER TABLE attachments ADD COLUMN IF NOT EXISTS telegram_file_id VARCHAR(200)",
             "ALTER TABLE attachments ADD COLUMN IF NOT EXISTS telegram_file_unique_id VARCHAR(200)",
@@ -738,7 +966,7 @@ static async Task ForceAddAttachmentColumnsAsync(CalendarDbContext dbContext)
             "ALTER TABLE attachments ADD COLUMN IF NOT EXISTS uploaded_at_utc TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()"
         };
         
-        foreach (var cmdText in commands)
+        foreach (var cmdText in addCommands)
         {
             try
             {
