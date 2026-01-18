@@ -110,6 +110,10 @@ public sealed class CommandHandlers
             case BotCommands.DigestTest:
                 await TestDigestAsync(message, cancellationToken);
                 break;
+            case BotCommands.Start:
+            case BotCommands.Menu:
+                await ShowMainMenuAsync(message, cancellationToken);
+                break;
             default:
                 var availableCommands = string.Join(", ", BotCommands.All);
                 await _botClient.SendMessage(
@@ -399,5 +403,19 @@ public sealed class CommandHandlers
                 $"Ошибка при формировании дайджеста: {ex.Message}",
                 cancellationToken: cancellationToken);
         }
+    }
+
+    private async Task ShowMainMenuAsync(Message message, CancellationToken cancellationToken)
+    {
+        var isStart = message.Text?.Trim() == BotCommands.Start;
+        var text = isStart 
+            ? "Добро пожаловать! Выберите действие:"
+            : "Выберите действие:";
+        
+        await _botClient.SendMessage(
+            message.Chat.Id,
+            text,
+            replyMarkup: InlineKeyboards.MainMenu(),
+            cancellationToken: cancellationToken);
     }
 }

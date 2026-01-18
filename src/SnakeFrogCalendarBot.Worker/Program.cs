@@ -103,7 +103,8 @@ try
                     birthdayRepository,
                     deleteEvent,
                     deleteBirthday,
-                    appOptions);
+                    appOptions,
+                    sp);
             });
             services.AddHostedService<BotHostedService>();
 

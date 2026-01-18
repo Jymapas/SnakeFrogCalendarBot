@@ -17,6 +17,8 @@ public static class BotCommands
     public const string EventDelete = "/event_delete";
     public const string Cancel = "/cancel";
     public const string DigestTest = "/digest_test";
+    public const string Start = "/start";
+    public const string Menu = "/menu";
 
     public static readonly string[] All =
     [
@@ -30,6 +32,8 @@ public static class BotCommands
         EventDelete,
         Cancel,
         DigestTest,
+        Start,
+        Menu,
     ];
 
     private static readonly Dictionary<string, string> CustomDescriptions = new(StringComparer.OrdinalIgnoreCase)
@@ -44,6 +48,8 @@ public static class BotCommands
         [EventDelete] = "Удалить событие",
         [Cancel] = "Отменить текущее действие",
         [DigestTest] = "Тест дайджеста",
+        [Start] = "Главное меню",
+        [Menu] = "Главное меню",
     };
 
     public static IReadOnlyList<BotCommand> AsBotCommands() =>

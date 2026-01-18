@@ -1,11 +1,13 @@
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
 using SnakeFrogCalendarBot.Application.Abstractions.Persistence;
 using SnakeFrogCalendarBot.Application.Abstractions.Time;
 using SnakeFrogCalendarBot.Application.UseCases.Birthdays;
 using SnakeFrogCalendarBot.Application.UseCases.Events;
 using SnakeFrogCalendarBot.Domain.Entities;
 using SnakeFrogCalendarBot.Worker.Config;
+using SnakeFrogCalendarBot.Worker.Telegram;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
@@ -26,6 +28,7 @@ public sealed class CallbackHandlers
     private readonly DeleteBirthday _deleteBirthday;
     private readonly string _botToken;
     private readonly HttpClient _httpClient;
+    private readonly IServiceProvider _serviceProvider;
 
     public CallbackHandlers(
         ITelegramBotClient botClient,
@@ -37,7 +40,8 @@ public sealed class CallbackHandlers
         IBirthdayRepository birthdayRepository,
         DeleteEvent deleteEvent,
         DeleteBirthday deleteBirthday,
-        AppOptions appOptions)
+        AppOptions appOptions,
+        IServiceProvider serviceProvider)
     {
         _botClient = botClient;
         _conversationRepository = conversationRepository;
@@ -50,6 +54,7 @@ public sealed class CallbackHandlers
         _deleteBirthday = deleteBirthday;
         _botToken = appOptions.TelegramBotToken;
         _httpClient = new HttpClient();
+        _serviceProvider = serviceProvider;
     }
 
     public async Task HandleAsync(CallbackQuery callbackQuery, CancellationToken cancellationToken)
@@ -60,6 +65,18 @@ public sealed class CallbackHandlers
         }
 
         var data = callbackQuery.Data;
+
+        if (data.StartsWith("menu:"))
+        {
+            await HandleMenuCallbackAsync(callbackQuery, data, cancellationToken);
+            return;
+        }
+
+        if (data.StartsWith("cmd:"))
+        {
+            await HandleCommandCallbackAsync(callbackQuery, data, cancellationToken);
+            return;
+        }
 
         if (data.StartsWith("event_download_file:"))
         {
@@ -583,5 +600,92 @@ public sealed class CallbackHandlers
             new[] { InlineKeyboardButton.WithCallbackData("🔗 Контакт", $"birthday_edit_field:{birthdayId}:contact") },
             new[] { InlineKeyboardButton.WithCallbackData("❌ Отмена", "cancel") }
         });
+    }
+
+    private async Task HandleMenuCallbackAsync(CallbackQuery callbackQuery, string data, CancellationToken cancellationToken)
+    {
+        await _botClient.AnswerCallbackQuery(
+            callbackQuery.Id,
+            cancellationToken: cancellationToken);
+
+        var menuType = data.Split(':')[1];
+        InlineKeyboardMarkup keyboard;
+        string text;
+
+        switch (menuType)
+        {
+            case "main":
+                keyboard = InlineKeyboards.MainMenu();
+                text = "Выберите действие:";
+                break;
+            case "events":
+                keyboard = InlineKeyboards.EventsMenu();
+                text = "Действия со событиями:";
+                break;
+            case "birthdays":
+                keyboard = InlineKeyboards.BirthdaysMenu();
+                text = "Действия с днями рождения:";
+                break;
+            default:
+                return;
+        }
+
+        if (callbackQuery.Message is not null)
+        {
+            await _botClient.EditMessageTextAsync(
+                callbackQuery.Message.Chat.Id,
+                callbackQuery.Message.MessageId,
+                text,
+                replyMarkup: keyboard,
+                cancellationToken: cancellationToken);
+        }
+        else
+        {
+            await _botClient.SendMessage(
+                callbackQuery.From!.Id,
+                text,
+                replyMarkup: keyboard,
+                cancellationToken: cancellationToken);
+        }
+    }
+
+    private async Task HandleCommandCallbackAsync(CallbackQuery callbackQuery, string data, CancellationToken cancellationToken)
+    {
+        await _botClient.AnswerCallbackQuery(
+            callbackQuery.Id,
+            cancellationToken: cancellationToken);
+
+        var commandName = data.Split(':')[1];
+        var command = commandName switch
+        {
+            "event_add" => BotCommands.EventAdd,
+            "event_list" => BotCommands.EventList,
+            "event_edit" => BotCommands.EventEdit,
+            "event_delete" => BotCommands.EventDelete,
+            "birthday_add" => BotCommands.BirthdayAdd,
+            "birthday_list" => BotCommands.BirthdayList,
+            "birthday_edit" => BotCommands.BirthdayEdit,
+            "birthday_delete" => BotCommands.BirthdayDelete,
+            _ => null
+        };
+
+        if (command is null)
+        {
+            return;
+        }
+
+        var chatId = callbackQuery.Message?.Chat.Id ?? callbackQuery.From!.Id;
+        var virtualMessage = new Message
+        {
+            MessageId = 0,
+            From = callbackQuery.From,
+            Date = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            Chat = new Chat { Id = chatId, Type = ChatType.Private },
+            Text = command
+        };
+
+        using var scope = _serviceProvider.CreateScope();
+        var commandHandlers = scope.ServiceProvider.GetRequiredService<CommandHandlers>();
+        await commandHandlers.HandleAsync(virtualMessage, cancellationToken);
     }
 }
