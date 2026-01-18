@@ -40,8 +40,9 @@ public sealed class DigestFormatter
                     builder.Append(item.Title);
                     if (item.BirthYear.HasValue)
                     {
+                        var age = CalculateAge(item.BirthYear.Value, date);
                         builder.Append(" (");
-                        builder.Append(item.BirthYear.Value);
+                        builder.Append(age);
                         builder.Append(")");
                     }
                 }
@@ -106,8 +107,9 @@ public sealed class DigestFormatter
                     builder.Append(item.Title);
                     if (item.BirthYear.HasValue)
                     {
+                        var age = CalculateAge(item.BirthYear.Value, date);
                         builder.Append(" (");
-                        builder.Append(item.BirthYear.Value);
+                        builder.Append(age);
                         builder.Append(")");
                     }
                 }
@@ -169,8 +171,9 @@ public sealed class DigestFormatter
                     builder.Append(item.Title);
                     if (item.BirthYear.HasValue)
                     {
+                        var age = CalculateAge(item.BirthYear.Value, date);
                         builder.Append(" (");
-                        builder.Append(item.BirthYear.Value);
+                        builder.Append(age);
                         builder.Append(")");
                     }
                 }
@@ -195,6 +198,12 @@ public sealed class DigestFormatter
         }
 
         return builder.ToString().TrimEnd();
+    }
+
+    private int CalculateAge(int birthYear, LocalDate eventDate)
+    {
+        var age = eventDate.Year - birthYear;
+        return age;
     }
 
     private string GetDayName(LocalDate date)

@@ -68,7 +68,7 @@ public sealed class BuildMonthlyDigest
 
             if (eventEntity.Kind == EventKind.OneOff && eventEntity.OccursAtUtc.HasValue)
             {
-                var instant = Instant.FromDateTimeUtc(eventEntity.OccursAtUtc.Value.DateTime);
+                var instant = Instant.FromDateTimeOffset(eventEntity.OccursAtUtc.Value);
                 var zonedDateTime = instant.InZone(timeZone);
                 var localDateTime = zonedDateTime.LocalDateTime;
                 eventDate = localDateTime.Date;
