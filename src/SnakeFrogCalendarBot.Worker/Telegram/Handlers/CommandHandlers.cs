@@ -137,7 +137,7 @@ public sealed class CommandHandlers
         await _conversationRepository.UpsertAsync(state, cancellationToken);
         await _botClient.SendMessage(
             message.Chat.Id,
-            "Введите имя",
+            "Введите имя\n\nИли отправьте многострочное сообщение:\nИмя\nдд MMMM [YYYY]\n[контакт]",
             cancellationToken: cancellationToken);
     }
 
@@ -223,7 +223,7 @@ public sealed class CommandHandlers
         await _conversationRepository.UpsertAsync(state, cancellationToken);
         await _botClient.SendMessage(
             message.Chat.Id,
-            "Введите название события",
+            "Введите название события\n\nИли отправьте многострочное сообщение:\nНазвание\nдата/время [разовое|ежегодное]\n[описание]\n[место]\n[ссылка]",
             cancellationToken: cancellationToken);
     }
 
