@@ -1,8 +1,11 @@
+using System.Text;
+using System.Text.Json;
 using SnakeFrogCalendarBot.Application.Abstractions.Persistence;
 using SnakeFrogCalendarBot.Application.Abstractions.Time;
 using SnakeFrogCalendarBot.Application.UseCases.Birthdays;
 using SnakeFrogCalendarBot.Application.UseCases.Events;
 using SnakeFrogCalendarBot.Domain.Entities;
+using SnakeFrogCalendarBot.Worker.Config;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
@@ -21,6 +24,8 @@ public sealed class CallbackHandlers
     private readonly IBirthdayRepository _birthdayRepository;
     private readonly DeleteEvent _deleteEvent;
     private readonly DeleteBirthday _deleteBirthday;
+    private readonly string _botToken;
+    private readonly HttpClient _httpClient;
 
     public CallbackHandlers(
         ITelegramBotClient botClient,
@@ -31,7 +36,8 @@ public sealed class CallbackHandlers
         IEventRepository eventRepository,
         IBirthdayRepository birthdayRepository,
         DeleteEvent deleteEvent,
-        DeleteBirthday deleteBirthday)
+        DeleteBirthday deleteBirthday,
+        AppOptions appOptions)
     {
         _botClient = botClient;
         _conversationRepository = conversationRepository;
@@ -42,6 +48,8 @@ public sealed class CallbackHandlers
         _birthdayRepository = birthdayRepository;
         _deleteEvent = deleteEvent;
         _deleteBirthday = deleteBirthday;
+        _botToken = appOptions.TelegramBotToken;
+        _httpClient = new HttpClient();
     }
 
     public async Task HandleAsync(CallbackQuery callbackQuery, CancellationToken cancellationToken)
@@ -91,11 +99,24 @@ public sealed class CallbackHandlers
 
             try
             {
-                await _botClient.SendMessage(
-                    callbackQuery.Message!.Chat.Id,
-                    $"📎 Файл: {currentAttachment.FileName}\n\nДля скачивания используйте file_id: `{currentAttachment.TelegramFileId}`",
-                    parseMode: ParseMode.MarkdownV2,
-                    cancellationToken: cancellationToken);
+                var chatId = callbackQuery.Message!.Chat.Id;
+                var url = $"https://api.telegram.org/bot{_botToken}/sendDocument";
+                
+                var formData = new MultipartFormDataContent();
+                formData.Add(new StringContent(chatId.ToString()), "chat_id");
+                formData.Add(new StringContent(currentAttachment.TelegramFileId), "document");
+                formData.Add(new StringContent($"Файл: {currentAttachment.FileName}"), "caption");
+                
+                var response = await _httpClient.PostAsync(url, formData, cancellationToken);
+                var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
+                
+                if (!response.IsSuccessStatusCode)
+                {
+                    await _botClient.SendMessage(
+                        callbackQuery.Message!.Chat.Id,
+                        $"Ошибка при отправке файла: {responseContent}",
+                        cancellationToken: cancellationToken);
+                }
             }
             catch (Exception ex)
             {

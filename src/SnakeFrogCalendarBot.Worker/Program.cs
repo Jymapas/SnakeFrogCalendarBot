@@ -81,7 +81,30 @@ try
             services.AddSingleton<UpdateDispatcher>();
             services.AddScoped<CommandHandlers>();
             services.AddScoped<MessageHandlers>();
-            services.AddScoped<CallbackHandlers>();
+            services.AddScoped<CallbackHandlers>(sp =>
+            {
+                var botClient = sp.GetRequiredService<ITelegramBotClient>();
+                var conversationRepository = sp.GetRequiredService<IConversationStateRepository>();
+                var clock = sp.GetRequiredService<IClock>();
+                var getEventWithAttachment = sp.GetRequiredService<GetEventWithAttachment>();
+                var replaceEventFile = sp.GetRequiredService<ReplaceEventFile>();
+                var eventRepository = sp.GetRequiredService<IEventRepository>();
+                var birthdayRepository = sp.GetRequiredService<IBirthdayRepository>();
+                var deleteEvent = sp.GetRequiredService<DeleteEvent>();
+                var deleteBirthday = sp.GetRequiredService<DeleteBirthday>();
+                var appOptions = sp.GetRequiredService<AppOptions>();
+                return new CallbackHandlers(
+                    botClient,
+                    conversationRepository,
+                    clock,
+                    getEventWithAttachment,
+                    replaceEventFile,
+                    eventRepository,
+                    birthdayRepository,
+                    deleteEvent,
+                    deleteBirthday,
+                    appOptions);
+            });
             services.AddHostedService<BotHostedService>();
 
             services.AddDbContext<CalendarDbContext>(db =>
