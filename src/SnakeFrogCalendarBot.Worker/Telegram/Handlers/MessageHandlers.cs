@@ -301,19 +301,36 @@ public sealed class MessageHandlers
                 {
                     await _botClient.SendMessage(
                         message.Chat.Id,
-                        "Не удалось распознать дату. Формат: 7 января",
+                        "Не удалось распознать дату. Формат: 7 января или 10 июня 1973",
                         cancellationToken: cancellationToken);
                     return;
                 }
 
                 data.Day = day;
                 data.Month = month;
-                await UpdateStateAsync(state, BirthdayConversationSteps.BirthYear, data, now, cancellationToken);
-                await _botClient.SendMessage(
-                    message.Chat.Id,
-                    "Введите год рождения или 'пропустить'",
-                    replyMarkup: CreateSkipKeyboard(ConversationNames.BirthdayAdd, BirthdayConversationSteps.BirthYear),
-                    cancellationToken: cancellationToken);
+
+                // Проверяем, есть ли год в строке
+                if (TryParseYearFromDateLine(text, out var year))
+                {
+                    data.BirthYear = year;
+                    // Если год найден, пропускаем шаг BirthYear и переходим к Contact
+                    await UpdateStateAsync(state, BirthdayConversationSteps.Contact, data, now, cancellationToken);
+                    await _botClient.SendMessage(
+                        message.Chat.Id,
+                        "Введите контакт или 'пропустить'",
+                        replyMarkup: CreateSkipKeyboard(ConversationNames.BirthdayAdd, BirthdayConversationSteps.Contact),
+                        cancellationToken: cancellationToken);
+                }
+                else
+                {
+                    // Год не найден, переходим к шагу ввода года
+                    await UpdateStateAsync(state, BirthdayConversationSteps.BirthYear, data, now, cancellationToken);
+                    await _botClient.SendMessage(
+                        message.Chat.Id,
+                        "Введите год рождения или 'пропустить'",
+                        replyMarkup: CreateSkipKeyboard(ConversationNames.BirthdayAdd, BirthdayConversationSteps.BirthYear),
+                        cancellationToken: cancellationToken);
+                }
                 break;
 
             case BirthdayConversationSteps.BirthYear:
