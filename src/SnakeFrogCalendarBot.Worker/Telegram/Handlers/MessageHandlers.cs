@@ -256,6 +256,37 @@ public sealed class MessageHandlers
         switch (state.Step)
         {
             case BirthdayConversationSteps.Name:
+                var isMultiline = text.Contains('\n');
+                if (isMultiline)
+                {
+                    if (TryParseMultilineBirthday(text, out var parsedName, out var parsedDay, out var parsedMonth, out var parsedYear, out var parsedContact))
+                    {
+                        var command = new CreateBirthdayCommand(
+                            parsedName,
+                            parsedDay,
+                            parsedMonth,
+                            parsedYear,
+                            parsedContact);
+
+                        await _createBirthday.ExecuteAsync(command, cancellationToken);
+                        await _conversationRepository.DeleteAsync(message.From!.Id, cancellationToken);
+
+                        await _botClient.SendMessage(
+                            message.Chat.Id,
+                            "Сохранено",
+                            cancellationToken: cancellationToken);
+                        return;
+                    }
+                    else
+                    {
+                        await _botClient.SendMessage(
+                            message.Chat.Id,
+                            "Не удалось распознать формат. Используйте:\nИмя\nдд MMMM [YYYY]\n[контакт]\n\nИли введите имя для пошагового ввода",
+                            cancellationToken: cancellationToken);
+                        return;
+                    }
+                }
+
                 data.PersonName = text;
                 await UpdateStateAsync(state, BirthdayConversationSteps.Date, data, now, cancellationToken);
                 await _botClient.SendMessage(
@@ -1047,6 +1078,75 @@ public sealed class MessageHandlers
     private static string SerializeEventEditData(EventEditConversationData data)
     {
         return JsonSerializer.Serialize(data, JsonOptions);
+    }
+
+    private bool TryParseMultilineBirthday(
+        string text,
+        out string personName,
+        out int day,
+        out int month,
+        out int? birthYear,
+        out string? contact)
+    {
+        personName = string.Empty;
+        day = 0;
+        month = 0;
+        birthYear = null;
+        contact = null;
+
+        var lines = text.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(l => l.Trim())
+            .Where(l => !string.IsNullOrWhiteSpace(l))
+            .ToArray();
+
+        if (lines.Length < 2 || lines.Length > 3)
+        {
+            return false;
+        }
+
+        personName = lines[0];
+        if (string.IsNullOrWhiteSpace(personName))
+        {
+            return false;
+        }
+
+        var dateLine = lines[1];
+        if (!_birthdayDateParser.TryParseMonthDay(dateLine, out day, out month))
+        {
+            return false;
+        }
+
+        if (TryParseYearFromDateLine(dateLine, out var year))
+        {
+            birthYear = year;
+        }
+
+        if (lines.Length == 3)
+        {
+            contact = lines[2];
+            if (string.IsNullOrWhiteSpace(contact))
+            {
+                contact = null;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool TryParseYearFromDateLine(string dateLine, out int year)
+    {
+        year = 0;
+        var parts = dateLine.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length >= 3)
+        {
+            var lastPart = parts[^1];
+            if (int.TryParse(lastPart, out var parsedYear) && parsedYear > 0 && parsedYear <= 9999)
+            {
+                year = parsedYear;
+                return true;
+            }
+        }
+        return false;
     }
 
     private static bool IsSkip(string text)
