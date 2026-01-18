@@ -93,6 +93,8 @@ try
                 var deleteEvent = sp.GetRequiredService<DeleteEvent>();
                 var deleteBirthday = sp.GetRequiredService<DeleteBirthday>();
                 var appOptions = sp.GetRequiredService<AppOptions>();
+                var listBirthdays = sp.GetRequiredService<ListBirthdays>();
+                var birthdayFormatter = sp.GetRequiredService<BirthdayListFormatter>();
                 return new CallbackHandlers(
                     botClient,
                     conversationRepository,
@@ -104,7 +106,9 @@ try
                     deleteEvent,
                     deleteBirthday,
                     appOptions,
-                    sp);
+                    sp,
+                    listBirthdays,
+                    birthdayFormatter);
             });
             services.AddHostedService<BotHostedService>();
 

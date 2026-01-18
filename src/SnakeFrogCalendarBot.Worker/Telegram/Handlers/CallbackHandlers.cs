@@ -1,8 +1,10 @@
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using SnakeFrogCalendarBot.Application.Abstractions.Persistence;
 using SnakeFrogCalendarBot.Application.Abstractions.Time;
+using SnakeFrogCalendarBot.Application.Formatting;
 using SnakeFrogCalendarBot.Application.UseCases.Birthdays;
 using SnakeFrogCalendarBot.Application.UseCases.Events;
 using SnakeFrogCalendarBot.Domain.Entities;
@@ -29,6 +31,8 @@ public sealed class CallbackHandlers
     private readonly string _botToken;
     private readonly HttpClient _httpClient;
     private readonly IServiceProvider _serviceProvider;
+    private readonly ListBirthdays _listBirthdays;
+    private readonly BirthdayListFormatter _birthdayFormatter;
 
     public CallbackHandlers(
         ITelegramBotClient botClient,
@@ -41,7 +45,9 @@ public sealed class CallbackHandlers
         DeleteEvent deleteEvent,
         DeleteBirthday deleteBirthday,
         AppOptions appOptions,
-        IServiceProvider serviceProvider)
+        IServiceProvider serviceProvider,
+        ListBirthdays listBirthdays,
+        BirthdayListFormatter birthdayFormatter)
     {
         _botClient = botClient;
         _conversationRepository = conversationRepository;
@@ -55,6 +61,8 @@ public sealed class CallbackHandlers
         _botToken = appOptions.TelegramBotToken;
         _httpClient = new HttpClient();
         _serviceProvider = serviceProvider;
+        _listBirthdays = listBirthdays;
+        _birthdayFormatter = birthdayFormatter;
     }
 
     public async Task HandleAsync(CallbackQuery callbackQuery, CancellationToken cancellationToken)
@@ -81,6 +89,12 @@ public sealed class CallbackHandlers
         if (data.StartsWith("skip:"))
         {
             await HandleSkipCallbackAsync(callbackQuery, data, cancellationToken);
+            return;
+        }
+
+        if (data.StartsWith("birthday_list_month:"))
+        {
+            await HandleBirthdayListMonthAsync(callbackQuery, data, cancellationToken);
             return;
         }
 
@@ -752,5 +766,39 @@ public sealed class CallbackHandlers
         using var scope = _serviceProvider.CreateScope();
         var messageHandlers = scope.ServiceProvider.GetRequiredService<MessageHandlers>();
         await messageHandlers.HandleAsync(virtualMessage, cancellationToken);
+    }
+
+    private async Task HandleBirthdayListMonthAsync(CallbackQuery callbackQuery, string data, CancellationToken cancellationToken)
+    {
+        await _botClient.AnswerCallbackQuery(
+            callbackQuery.Id,
+            cancellationToken: cancellationToken);
+
+        var parts = data.Split(':');
+        if (parts.Length < 2 || !int.TryParse(parts[1], out var month) || month < 1 || month > 12)
+        {
+            await _botClient.SendMessage(
+                callbackQuery.Message?.Chat.Id ?? callbackQuery.From!.Id,
+                "Ошибка: неверный номер месяца",
+                cancellationToken: cancellationToken);
+            return;
+        }
+
+        // Получаем все дни рождения и фильтруем по месяцу
+        var allBirthdays = await _listBirthdays.ExecuteAsync(cancellationToken);
+        var monthBirthdays = allBirthdays
+            .Where(b => b.Month == month)
+            .OrderBy(b => b.Day)
+            .ToList();
+
+        var monthName = CultureInfo.GetCultureInfo("ru-RU").DateTimeFormat.GetMonthName(month);
+        var text = monthBirthdays.Count == 0
+            ? $"Дней рождения в {monthName} нет"
+            : $"Дни рождения в {monthName}:\n\n{_birthdayFormatter.Format(monthBirthdays)}";
+
+        await _botClient.SendMessage(
+            callbackQuery.Message?.Chat.Id ?? callbackQuery.From!.Id,
+            text,
+            cancellationToken: cancellationToken);
     }
 }

@@ -1457,8 +1457,13 @@ public sealed class MessageHandlers
                 break;
 
             case "🎂 Дни рождения":
-                command = BotCommands.BirthdayList;
-                break;
+                // Показываем выбор месяца вместо прямого списка
+                await _botClient.SendMessage(
+                    message.Chat.Id,
+                    "Выберите месяц:",
+                    replyMarkup: InlineKeyboards.MonthSelectionKeyboard(),
+                    cancellationToken: cancellationToken);
+                return true;
 
             case "✏️ Редактировать":
                 await _botClient.SendMessage(

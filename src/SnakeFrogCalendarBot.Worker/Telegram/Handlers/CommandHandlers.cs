@@ -149,12 +149,11 @@ public sealed class CommandHandlers
 
     private async Task SendBirthdayListAsync(Message message, CancellationToken cancellationToken)
     {
-        var birthdays = await _listBirthdays.ExecuteAsync(cancellationToken);
-        var text = _birthdayFormatter.Format(birthdays);
-
+        // Показываем выбор месяца вместо полного списка
         await _botClient.SendMessage(
             message.Chat.Id,
-            text,
+            "Выберите месяц:",
+            replyMarkup: InlineKeyboards.MonthSelectionKeyboard(),
             cancellationToken: cancellationToken);
     }
 
