@@ -5,6 +5,7 @@ using SnakeFrogCalendarBot.Application.UseCases.Birthdays;
 using SnakeFrogCalendarBot.Application.UseCases.Events;
 using SnakeFrogCalendarBot.Application.UseCases.Notifications;
 using SnakeFrogCalendarBot.Domain.Entities;
+using SnakeFrogCalendarBot.Worker.Telegram;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.ReplyMarkups;
@@ -79,40 +80,45 @@ public sealed class CommandHandlers
 
         switch (command)
         {
-            case "/birthday_add":
+            case BotCommands.BirthdayAdd:
                 await StartBirthdayAddAsync(message, cancellationToken);
                 break;
-            case "/birthday_list":
+            case BotCommands.BirthdayList:
                 await SendBirthdayListAsync(message, cancellationToken);
                 break;
-            case "/event_add":
+            case BotCommands.EventAdd:
                 await StartEventAddAsync(message, cancellationToken);
                 break;
-            case "/event_list":
+            case BotCommands.EventList:
                 await SendEventListAsync(message, cancellationToken);
                 break;
-            case "/event_edit":
+            case BotCommands.EventEdit:
                 await SendEventListForEditAsync(message, cancellationToken);
                 break;
-            case "/event_delete":
+            case BotCommands.EventDelete:
                 await SendEventListForDeleteAsync(message, cancellationToken);
                 break;
-            case "/birthday_edit":
+            case BotCommands.BirthdayEdit:
                 await SendBirthdayListForEditAsync(message, cancellationToken);
                 break;
-            case "/birthday_delete":
+            case BotCommands.BirthdayDelete:
                 await SendBirthdayListForDeleteAsync(message, cancellationToken);
                 break;
-            case "/cancel":
+            case BotCommands.Cancel:
                 await CancelConversationAsync(message, cancellationToken);
                 break;
-            case "/digest_test":
+            case BotCommands.DigestTest:
                 await TestDigestAsync(message, cancellationToken);
                 break;
+            case BotCommands.Start:
+            case BotCommands.Menu:
+                await ShowMainMenuAsync(message, cancellationToken);
+                break;
             default:
+                var availableCommands = string.Join(", ", BotCommands.All);
                 await _botClient.SendMessage(
                     message.Chat.Id,
-                    "Неизвестная команда. Доступные: /birthday_add, /birthday_list, /birthday_edit, /birthday_delete, /event_add, /event_list, /event_edit, /event_delete, /cancel, /digest_test",
+                    $"Неизвестная команда. Доступные: {availableCommands}",
                     cancellationToken: cancellationToken);
                 break;
         }
@@ -143,12 +149,11 @@ public sealed class CommandHandlers
 
     private async Task SendBirthdayListAsync(Message message, CancellationToken cancellationToken)
     {
-        var birthdays = await _listBirthdays.ExecuteAsync(cancellationToken);
-        var text = _birthdayFormatter.Format(birthdays);
-
+        // Показываем выбор месяца вместо полного списка
         await _botClient.SendMessage(
             message.Chat.Id,
-            text,
+            "Выберите месяц:",
+            replyMarkup: InlineKeyboards.MonthSelectionKeyboard(),
             cancellationToken: cancellationToken);
     }
 
@@ -397,5 +402,19 @@ public sealed class CommandHandlers
                 $"Ошибка при формировании дайджеста: {ex.Message}",
                 cancellationToken: cancellationToken);
         }
+    }
+
+    private async Task ShowMainMenuAsync(Message message, CancellationToken cancellationToken)
+    {
+        var isStart = message.Text?.Trim() == BotCommands.Start;
+        var text = isStart 
+            ? "Добро пожаловать! Используйте клавиатуру для быстрого доступа к функциям."
+            : "Используйте клавиатуру для быстрого доступа к функциям.";
+        
+        await _botClient.SendMessage(
+            message.Chat.Id,
+            text,
+            replyMarkup: ReplyKeyboards.MainKeyboard(),
+            cancellationToken: cancellationToken);
     }
 }

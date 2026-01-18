@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.Extensions.DependencyInjection;
 using NodaTime;
 using SnakeFrogCalendarBot.Application.Abstractions.Parsing;
 using SnakeFrogCalendarBot.Application.Abstractions.Persistence;
@@ -10,6 +11,7 @@ using SnakeFrogCalendarBot.Domain.Entities;
 using SnakeFrogCalendarBot.Domain.Enums;
 using Telegram.Bot;
 using Telegram.Bot.Types;
+using Telegram.Bot.Types.ReplyMarkups;
 using IClock = SnakeFrogCalendarBot.Application.Abstractions.Time.IClock;
 
 namespace SnakeFrogCalendarBot.Worker.Telegram.Handlers;
@@ -36,6 +38,7 @@ public sealed class MessageHandlers
     private readonly IBirthdayRepository _birthdayRepository;
     private readonly IClock _clock;
     private readonly ITimeZoneProvider _timeZoneProvider;
+    private readonly IServiceProvider _serviceProvider;
 
     public MessageHandlers(
         ITelegramBotClient botClient,
@@ -51,7 +54,8 @@ public sealed class MessageHandlers
         IEventRepository eventRepository,
         IBirthdayRepository birthdayRepository,
         IClock clock,
-        ITimeZoneProvider timeZoneProvider)
+        ITimeZoneProvider timeZoneProvider,
+        IServiceProvider serviceProvider)
     {
         _botClient = botClient;
         _conversationRepository = conversationRepository;
@@ -67,6 +71,7 @@ public sealed class MessageHandlers
         _birthdayRepository = birthdayRepository;
         _clock = clock;
         _timeZoneProvider = timeZoneProvider;
+        _serviceProvider = serviceProvider;
     }
 
     public async Task HandleAsync(Message message, CancellationToken cancellationToken)
@@ -98,6 +103,13 @@ public sealed class MessageHandlers
 
         if (state is null)
         {
+            // Обработка нажатий на кнопки клавиатуры
+            var text = message.Text.Trim();
+            if (await HandleKeyboardButtonAsync(message, text, cancellationToken))
+            {
+                return;
+            }
+
             await _botClient.SendMessage(
                 message.Chat.Id,
                 "Используйте /birthday_add, /birthday_list, /event_add или /event_list",
@@ -300,18 +312,36 @@ public sealed class MessageHandlers
                 {
                     await _botClient.SendMessage(
                         message.Chat.Id,
-                        "Не удалось распознать дату. Формат: 7 января",
+                        "Не удалось распознать дату. Формат: 7 января или 10 июня 1973",
                         cancellationToken: cancellationToken);
                     return;
                 }
 
                 data.Day = day;
                 data.Month = month;
-                await UpdateStateAsync(state, BirthdayConversationSteps.BirthYear, data, now, cancellationToken);
-                await _botClient.SendMessage(
-                    message.Chat.Id,
-                    "Введите год рождения или 'пропустить'",
-                    cancellationToken: cancellationToken);
+
+                // Проверяем, есть ли год в строке
+                if (TryParseYearFromDateLine(text, out var year))
+                {
+                    data.BirthYear = year;
+                    // Если год найден, пропускаем шаг BirthYear и переходим к Contact
+                    await UpdateStateAsync(state, BirthdayConversationSteps.Contact, data, now, cancellationToken);
+                    await _botClient.SendMessage(
+                        message.Chat.Id,
+                        "Введите контакт или 'пропустить'",
+                        replyMarkup: CreateSkipKeyboard(ConversationNames.BirthdayAdd, BirthdayConversationSteps.Contact),
+                        cancellationToken: cancellationToken);
+                }
+                else
+                {
+                    // Год не найден, переходим к шагу ввода года
+                    await UpdateStateAsync(state, BirthdayConversationSteps.BirthYear, data, now, cancellationToken);
+                    await _botClient.SendMessage(
+                        message.Chat.Id,
+                        "Введите год рождения или 'пропустить'",
+                        replyMarkup: CreateSkipKeyboard(ConversationNames.BirthdayAdd, BirthdayConversationSteps.BirthYear),
+                        cancellationToken: cancellationToken);
+                }
                 break;
 
             case BirthdayConversationSteps.BirthYear:
@@ -324,6 +354,7 @@ public sealed class MessageHandlers
                     await _botClient.SendMessage(
                         message.Chat.Id,
                         "Введите год рождения или 'пропустить'",
+                        replyMarkup: CreateSkipKeyboard(ConversationNames.BirthdayAdd, BirthdayConversationSteps.BirthYear),
                         cancellationToken: cancellationToken);
                     return;
                 }
@@ -336,6 +367,7 @@ public sealed class MessageHandlers
                 await _botClient.SendMessage(
                     message.Chat.Id,
                     "Введите контакт или 'пропустить'",
+                    replyMarkup: CreateSkipKeyboard(ConversationNames.BirthdayAdd, BirthdayConversationSteps.Contact),
                     cancellationToken: cancellationToken);
                 break;
 
@@ -552,6 +584,7 @@ public sealed class MessageHandlers
                 await _botClient.SendMessage(
                     message.Chat.Id,
                     "Введите описание или 'пропустить'",
+                    replyMarkup: CreateSkipKeyboard(ConversationNames.EventAdd, EventConversationSteps.Description),
                     cancellationToken: cancellationToken);
                 break;
 
@@ -561,6 +594,7 @@ public sealed class MessageHandlers
                 await _botClient.SendMessage(
                     message.Chat.Id,
                     "Введите место или 'пропустить'",
+                    replyMarkup: CreateSkipKeyboard(ConversationNames.EventAdd, EventConversationSteps.Place),
                     cancellationToken: cancellationToken);
                 break;
 
@@ -570,6 +604,7 @@ public sealed class MessageHandlers
                 await _botClient.SendMessage(
                     message.Chat.Id,
                     "Введите ссылку или 'пропустить'",
+                    replyMarkup: CreateSkipKeyboard(ConversationNames.EventAdd, EventConversationSteps.Link),
                     cancellationToken: cancellationToken);
                 break;
 
@@ -1390,6 +1425,90 @@ public sealed class MessageHandlers
             message.Chat.Id,
             "Событие сохранено",
             cancellationToken: cancellationToken);
+    }
+
+    private static InlineKeyboardMarkup CreateSkipKeyboard(string conversationName, string step)
+    {
+        return new InlineKeyboardMarkup(new[]
+        {
+            new[]
+            {
+                InlineKeyboardButton.WithCallbackData("⏭ Пропустить", $"skip:{conversationName}:{step}")
+            }
+        });
+    }
+
+    private async Task<bool> HandleKeyboardButtonAsync(Message message, string text, CancellationToken cancellationToken)
+    {
+        string? command = null;
+        
+        switch (text)
+        {
+            case "➕ Событие":
+                command = BotCommands.EventAdd;
+                break;
+
+            case "➕ День рождения":
+                command = BotCommands.BirthdayAdd;
+                break;
+
+            case "📅 События":
+                command = BotCommands.EventList;
+                break;
+
+            case "🎂 Дни рождения":
+                // Показываем выбор месяца вместо прямого списка
+                await _botClient.SendMessage(
+                    message.Chat.Id,
+                    "Выберите месяц:",
+                    replyMarkup: InlineKeyboards.MonthSelectionKeyboard(),
+                    cancellationToken: cancellationToken);
+                return true;
+
+            case "✏️ Редактировать":
+                await _botClient.SendMessage(
+                    message.Chat.Id,
+                    "Выберите, что редактировать:\n" + BotCommands.EventEdit + " - событие\n" + BotCommands.BirthdayEdit + " - день рождения",
+                    cancellationToken: cancellationToken);
+                return true;
+
+            case "🗑 Удалить":
+                await _botClient.SendMessage(
+                    message.Chat.Id,
+                    "Выберите, что удалить:\n" + BotCommands.EventDelete + " - событие\n" + BotCommands.BirthdayDelete + " - день рождения",
+                    cancellationToken: cancellationToken);
+                return true;
+
+            case "❌ Скрыть клавиатуру":
+                await _botClient.SendMessage(
+                    message.Chat.Id,
+                    "Клавиатура скрыта. Используйте /start для её восстановления.",
+                    replyMarkup: ReplyKeyboards.RemoveKeyboard(),
+                    cancellationToken: cancellationToken);
+                return true;
+
+            default:
+                return false;
+        }
+
+        if (command is not null)
+        {
+            // Создаем виртуальное сообщение с командой и передаем в CommandHandlers
+            var virtualMessage = new Message
+            {
+                From = message.From,
+                Date = DateTime.UtcNow,
+                Chat = message.Chat,
+                Text = command
+            };
+
+            using var scope = _serviceProvider.CreateScope();
+            var commandHandlers = scope.ServiceProvider.GetRequiredService<CommandHandlers>();
+            await commandHandlers.HandleAsync(virtualMessage, cancellationToken);
+            return true;
+        }
+
+        return false;
     }
 
     private static bool IsSkip(string text)
