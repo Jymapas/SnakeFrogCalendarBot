@@ -10,6 +10,7 @@ using SnakeFrogCalendarBot.Domain.Entities;
 using SnakeFrogCalendarBot.Domain.Enums;
 using Telegram.Bot;
 using Telegram.Bot.Types;
+using Telegram.Bot.Types.ReplyMarkups;
 using IClock = SnakeFrogCalendarBot.Application.Abstractions.Time.IClock;
 
 namespace SnakeFrogCalendarBot.Worker.Telegram.Handlers;
@@ -311,6 +312,7 @@ public sealed class MessageHandlers
                 await _botClient.SendMessage(
                     message.Chat.Id,
                     "Введите год рождения или 'пропустить'",
+                    replyMarkup: CreateSkipKeyboard(ConversationNames.BirthdayAdd, BirthdayConversationSteps.BirthYear),
                     cancellationToken: cancellationToken);
                 break;
 
@@ -324,6 +326,7 @@ public sealed class MessageHandlers
                     await _botClient.SendMessage(
                         message.Chat.Id,
                         "Введите год рождения или 'пропустить'",
+                        replyMarkup: CreateSkipKeyboard(ConversationNames.BirthdayAdd, BirthdayConversationSteps.BirthYear),
                         cancellationToken: cancellationToken);
                     return;
                 }
@@ -336,6 +339,7 @@ public sealed class MessageHandlers
                 await _botClient.SendMessage(
                     message.Chat.Id,
                     "Введите контакт или 'пропустить'",
+                    replyMarkup: CreateSkipKeyboard(ConversationNames.BirthdayAdd, BirthdayConversationSteps.Contact),
                     cancellationToken: cancellationToken);
                 break;
 
@@ -552,6 +556,7 @@ public sealed class MessageHandlers
                 await _botClient.SendMessage(
                     message.Chat.Id,
                     "Введите описание или 'пропустить'",
+                    replyMarkup: CreateSkipKeyboard(ConversationNames.EventAdd, EventConversationSteps.Description),
                     cancellationToken: cancellationToken);
                 break;
 
@@ -561,6 +566,7 @@ public sealed class MessageHandlers
                 await _botClient.SendMessage(
                     message.Chat.Id,
                     "Введите место или 'пропустить'",
+                    replyMarkup: CreateSkipKeyboard(ConversationNames.EventAdd, EventConversationSteps.Place),
                     cancellationToken: cancellationToken);
                 break;
 
@@ -570,6 +576,7 @@ public sealed class MessageHandlers
                 await _botClient.SendMessage(
                     message.Chat.Id,
                     "Введите ссылку или 'пропустить'",
+                    replyMarkup: CreateSkipKeyboard(ConversationNames.EventAdd, EventConversationSteps.Link),
                     cancellationToken: cancellationToken);
                 break;
 
@@ -1390,6 +1397,17 @@ public sealed class MessageHandlers
             message.Chat.Id,
             "Событие сохранено",
             cancellationToken: cancellationToken);
+    }
+
+    private static InlineKeyboardMarkup CreateSkipKeyboard(string conversationName, string step)
+    {
+        return new InlineKeyboardMarkup(new[]
+        {
+            new[]
+            {
+                InlineKeyboardButton.WithCallbackData("⏭ Пропустить", $"skip:{conversationName}:{step}")
+            }
+        });
     }
 
     private static bool IsSkip(string text)

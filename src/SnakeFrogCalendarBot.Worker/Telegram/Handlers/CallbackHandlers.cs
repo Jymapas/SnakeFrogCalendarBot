@@ -78,6 +78,12 @@ public sealed class CallbackHandlers
             return;
         }
 
+        if (data.StartsWith("skip:"))
+        {
+            await HandleSkipCallbackAsync(callbackQuery, data, cancellationToken);
+            return;
+        }
+
         if (data.StartsWith("event_download_file:"))
         {
             var eventIdStr = data.Contains(':') ? data.Split(':')[1] : null;
@@ -337,9 +343,16 @@ public sealed class CallbackHandlers
             _ => "Введите новое значение:"
         };
 
+        InlineKeyboardMarkup? keyboard = null;
+        if (field is "description" or "place" or "link")
+        {
+            keyboard = CreateSkipKeyboardForEdit(ConversationNames.EventEdit, $"{field}:{eventId}");
+        }
+
         await _botClient.SendMessage(
             callbackQuery.Message!.Chat.Id,
             messageText,
+            replyMarkup: keyboard,
             cancellationToken: cancellationToken);
     }
 
@@ -467,9 +480,16 @@ public sealed class CallbackHandlers
             _ => "Введите новое значение:"
         };
 
+        InlineKeyboardMarkup? keyboard = null;
+        if (field is "birthYear" or "contact")
+        {
+            keyboard = CreateSkipKeyboardForEdit(ConversationNames.BirthdayEdit, $"{field}:{birthdayId}");
+        }
+
         await _botClient.SendMessage(
             callbackQuery.Message!.Chat.Id,
             messageText,
+            replyMarkup: keyboard,
             cancellationToken: cancellationToken);
     }
 
@@ -602,6 +622,17 @@ public sealed class CallbackHandlers
         });
     }
 
+    private static InlineKeyboardMarkup CreateSkipKeyboardForEdit(string conversationName, string step)
+    {
+        return new InlineKeyboardMarkup(new[]
+        {
+            new[]
+            {
+                InlineKeyboardButton.WithCallbackData("⏭ Пропустить", $"skip:{conversationName}:{step}")
+            }
+        });
+    }
+
     private async Task HandleMenuCallbackAsync(CallbackQuery callbackQuery, string data, CancellationToken cancellationToken)
     {
         await _botClient.AnswerCallbackQuery(
@@ -686,5 +717,40 @@ public sealed class CallbackHandlers
         using var scope = _serviceProvider.CreateScope();
         var commandHandlers = scope.ServiceProvider.GetRequiredService<CommandHandlers>();
         await commandHandlers.HandleAsync(virtualMessage, cancellationToken);
+    }
+
+    private async Task HandleSkipCallbackAsync(CallbackQuery callbackQuery, string data, CancellationToken cancellationToken)
+    {
+        await _botClient.AnswerCallbackQuery(
+            callbackQuery.Id,
+            cancellationToken: cancellationToken);
+
+        var parts = data.Split(':');
+        if (parts.Length < 3)
+        {
+            return;
+        }
+
+        var conversationName = parts[1];
+        var step = parts[2];
+
+        var chatId = callbackQuery.Message?.Chat.Id ?? callbackQuery.From!.Id;
+        var virtualMessage = new Message
+        {
+            From = callbackQuery.From,
+            Date = DateTime.UtcNow,
+            Chat = new Chat { Id = chatId, Type = ChatType.Private },
+            Text = "пропустить"
+        };
+
+        var state = await _conversationRepository.GetByUserIdAsync(callbackQuery.From!.Id, cancellationToken);
+        if (state is null || state.ConversationName != conversationName || state.Step != step)
+        {
+            return;
+        }
+
+        using var scope = _serviceProvider.CreateScope();
+        var messageHandlers = scope.ServiceProvider.GetRequiredService<MessageHandlers>();
+        await messageHandlers.HandleAsync(virtualMessage, cancellationToken);
     }
 }
