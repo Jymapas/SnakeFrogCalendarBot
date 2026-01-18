@@ -46,7 +46,7 @@ public sealed class WeeklyDigestJob : IJob
         {
             var result = await _buildWeeklyDigest.ExecuteAsync(context.CancellationToken);
 
-            var periodStartLocal = result.PeriodStart.AtStartOfDay().ToDateTimeUnspecified();
+            var periodStartLocal = result.PeriodStart.AtMidnight().ToDateTimeUnspecified();
             var periodEndLocal = result.PeriodEnd.At(NodaTime.LocalTime.MaxValue).ToDateTimeUnspecified();
 
             var exists = await _notificationRunRepository.ExistsAsync(

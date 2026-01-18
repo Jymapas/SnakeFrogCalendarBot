@@ -110,7 +110,7 @@ public sealed class CommandHandlers
                 await TestDigestAsync(message, cancellationToken);
                 break;
             default:
-                await _botClient.SendTextMessageAsync(
+                await _botClient.SendMessage(
                     message.Chat.Id,
                     "Неизвестная команда. Доступные: /birthday_add, /birthday_list, /birthday_edit, /birthday_delete, /event_add, /event_list, /event_edit, /event_delete, /cancel, /digest_test",
                     cancellationToken: cancellationToken);
@@ -135,7 +135,7 @@ public sealed class CommandHandlers
             now);
 
         await _conversationRepository.UpsertAsync(state, cancellationToken);
-        await _botClient.SendTextMessageAsync(
+        await _botClient.SendMessage(
             message.Chat.Id,
             "Введите имя",
             cancellationToken: cancellationToken);
@@ -146,7 +146,7 @@ public sealed class CommandHandlers
         var birthdays = await _listBirthdays.ExecuteAsync(cancellationToken);
         var text = _birthdayFormatter.Format(birthdays);
 
-        await _botClient.SendTextMessageAsync(
+        await _botClient.SendMessage(
             message.Chat.Id,
             text,
             cancellationToken: cancellationToken);
@@ -171,7 +171,7 @@ public sealed class CommandHandlers
             text = "Дней рождения пока нет";
         }
 
-        await _botClient.SendTextMessageAsync(
+        await _botClient.SendMessage(
             message.Chat.Id,
             text,
             replyMarkup: buttons.Count > 0 ? new InlineKeyboardMarkup(buttons) : null,
@@ -197,7 +197,7 @@ public sealed class CommandHandlers
             text = "Дней рождения пока нет";
         }
 
-        await _botClient.SendTextMessageAsync(
+        await _botClient.SendMessage(
             message.Chat.Id,
             text,
             replyMarkup: buttons.Count > 0 ? new InlineKeyboardMarkup(buttons) : null,
@@ -221,7 +221,7 @@ public sealed class CommandHandlers
             now);
 
         await _conversationRepository.UpsertAsync(state, cancellationToken);
-        await _botClient.SendTextMessageAsync(
+        await _botClient.SendMessage(
             message.Chat.Id,
             "Введите название события",
             cancellationToken: cancellationToken);
@@ -231,17 +231,17 @@ public sealed class CommandHandlers
     {
         var events = await _listUpcomingItems.ExecuteAsync(cancellationToken);
         
-        var eventAttachmentCount = new Dictionary<int, int>();
+        var eventAttachments = new Dictionary<int, Attachment?>();
         foreach (var eventEntity in events)
         {
-            var attachments = await _attachmentRepository.GetByEventIdAsync(eventEntity.Id, cancellationToken);
-            eventAttachmentCount[eventEntity.Id] = attachments.Count;
+            var currentAttachment = await _attachmentRepository.GetCurrentByEventIdAsync(eventEntity.Id, cancellationToken);
+            eventAttachments[eventEntity.Id] = currentAttachment;
         }
 
-        var text = _eventFormatter.Format(events, eventAttachmentCount);
+        var text = _eventFormatter.Format(events, eventAttachments);
         var inlineKeyboard = await CreateEventListInlineKeyboard(events, cancellationToken);
 
-        await _botClient.SendTextMessageAsync(
+        await _botClient.SendMessage(
             message.Chat.Id,
             text,
             replyMarkup: inlineKeyboard,
@@ -256,16 +256,17 @@ public sealed class CommandHandlers
 
         foreach (var eventEntity in events)
         {
-            var attachments = await _attachmentRepository.GetByEventIdAsync(eventEntity.Id, cancellationToken);
-            var hasFiles = attachments.Count > 0;
+            var currentAttachment = await _attachmentRepository.GetCurrentByEventIdAsync(eventEntity.Id, cancellationToken);
+            var hasFile = currentAttachment != null;
 
             var row = new List<InlineKeyboardButton>
             {
                 InlineKeyboardButton.WithCallbackData("📎 Добавить файл", $"event_attach:{eventEntity.Id}")
             };
 
-            if (hasFiles)
+            if (hasFile)
             {
+                row.Add(InlineKeyboardButton.WithCallbackData("📥 Скачать файл", $"event_download_file:{eventEntity.Id}"));
                 row.Add(InlineKeyboardButton.WithCallbackData("♻️ Заменить файл", $"event_replace_file:{eventEntity.Id}"));
             }
 
@@ -294,7 +295,7 @@ public sealed class CommandHandlers
             text = "Событий пока нет";
         }
 
-        await _botClient.SendTextMessageAsync(
+        await _botClient.SendMessage(
             message.Chat.Id,
             text,
             replyMarkup: buttons.Count > 0 ? new InlineKeyboardMarkup(buttons) : null,
@@ -320,7 +321,7 @@ public sealed class CommandHandlers
             text = "Событий пока нет";
         }
 
-        await _botClient.SendTextMessageAsync(
+        await _botClient.SendMessage(
             message.Chat.Id,
             text,
             replyMarkup: buttons.Count > 0 ? new InlineKeyboardMarkup(buttons) : null,
@@ -336,7 +337,7 @@ public sealed class CommandHandlers
         }
 
         await _conversationRepository.DeleteAsync(userId.Value, cancellationToken);
-        await _botClient.SendTextMessageAsync(
+        await _botClient.SendMessage(
             message.Chat.Id,
             "Действие отменено",
             cancellationToken: cancellationToken);
@@ -347,7 +348,7 @@ public sealed class CommandHandlers
         var parts = message.Text?.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (parts is null || parts.Length < 2)
         {
-            await _botClient.SendTextMessageAsync(
+            await _botClient.SendMessage(
                 message.Chat.Id,
                 "Использование: /digest_test daily|weekly|monthly",
                 cancellationToken: cancellationToken);
@@ -377,21 +378,21 @@ public sealed class CommandHandlers
                     break;
 
                 default:
-                    await _botClient.SendTextMessageAsync(
+                    await _botClient.SendMessage(
                         message.Chat.Id,
                         "Неизвестный тип дайджеста. Используйте: daily, weekly или monthly",
                         cancellationToken: cancellationToken);
                     return;
             }
 
-            await _botClient.SendTextMessageAsync(
+            await _botClient.SendMessage(
                 message.Chat.Id,
                 digestText,
                 cancellationToken: cancellationToken);
         }
         catch (Exception ex)
         {
-            await _botClient.SendTextMessageAsync(
+            await _botClient.SendMessage(
                 message.Chat.Id,
                 $"Ошибка при формировании дайджеста: {ex.Message}",
                 cancellationToken: cancellationToken);

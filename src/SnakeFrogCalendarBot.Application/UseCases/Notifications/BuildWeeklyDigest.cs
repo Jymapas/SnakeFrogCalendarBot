@@ -4,6 +4,7 @@ using SnakeFrogCalendarBot.Application.Abstractions.Time;
 using SnakeFrogCalendarBot.Application.Dto;
 using SnakeFrogCalendarBot.Domain.Entities;
 using SnakeFrogCalendarBot.Domain.Enums;
+using AppClock = SnakeFrogCalendarBot.Application.Abstractions.Time.IClock;
 
 namespace SnakeFrogCalendarBot.Application.UseCases.Notifications;
 
@@ -12,14 +13,14 @@ public sealed class BuildWeeklyDigest
     private readonly IEventRepository _eventRepository;
     private readonly IBirthdayRepository _birthdayRepository;
     private readonly IAttachmentRepository _attachmentRepository;
-    private readonly IClock _clock;
+    private readonly AppClock _clock;
     private readonly ITimeZoneProvider _timeZoneProvider;
 
     public BuildWeeklyDigest(
         IEventRepository eventRepository,
         IBirthdayRepository birthdayRepository,
         IAttachmentRepository attachmentRepository,
-        IClock clock,
+        AppClock clock,
         ITimeZoneProvider timeZoneProvider)
     {
         _eventRepository = eventRepository;
@@ -39,7 +40,7 @@ public sealed class BuildWeeklyDigest
         var daysUntilMonday = ((int)IsoDayOfWeek.Monday - (int)today.DayOfWeek + 7) % 7;
         var nextMonday = daysUntilMonday == 0 ? today.PlusDays(7) : today.PlusDays(daysUntilMonday);
 
-        var periodStart = nextMonday.AtStartOfDay();
+        var periodStart = nextMonday.AtMidnight();
         var periodEnd = nextMonday.PlusDays(6).At(LocalTime.MaxValue);
 
         var items = await BuildItemsAsync(periodStart, periodEnd, timeZone, cancellationToken);
@@ -68,7 +69,7 @@ public sealed class BuildWeeklyDigest
 
             if (eventEntity.Kind == EventKind.OneOff && eventEntity.OccursAtUtc.HasValue)
             {
-                var instant = Instant.FromDateTimeUtc(eventEntity.OccursAtUtc.Value.DateTime);
+                var instant = Instant.FromDateTimeOffset(eventEntity.OccursAtUtc.Value);
                 var zonedDateTime = instant.InZone(timeZone);
                 var localDateTime = zonedDateTime.LocalDateTime;
                 eventDate = localDateTime.Date;
@@ -95,7 +96,7 @@ public sealed class BuildWeeklyDigest
             {
                 var eventDateTime = eventTime.HasValue
                     ? eventDate.Value.At(eventTime.Value)
-                    : eventDate.Value.AtStartOfDay();
+                    : eventDate.Value.AtMidnight();
                 var eventInstant = eventDateTime.InZoneLeniently(timeZone).ToInstant();
 
                 if (eventInstant >= periodStartInstant && eventInstant <= periodEndInstant)
@@ -132,7 +133,8 @@ public sealed class BuildWeeklyDigest
                     Type = CalendarItemType.Birthday,
                     IsAllDay = true,
                     HasAttachment = false,
-                    BirthYear = birthday.BirthYear
+                    BirthYear = birthday.BirthYear,
+                    Contact = birthday.Contact
                 });
             }
         }

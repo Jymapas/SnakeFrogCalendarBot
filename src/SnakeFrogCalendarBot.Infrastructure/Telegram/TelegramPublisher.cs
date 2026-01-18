@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using SnakeFrogCalendarBot.Application.Abstractions.Telegram;
 using Telegram.Bot;
 using Telegram.Bot.Types;
+using Telegram.Bot.Types.Enums;
 
 namespace SnakeFrogCalendarBot.Infrastructure.Telegram;
 
@@ -26,7 +27,7 @@ public sealed class TelegramPublisher : ITelegramPublisher
         try
         {
             var chatId = new ChatId(_targetChat);
-            await _botClient.SendTextMessageAsync(chatId, text, cancellationToken: cancellationToken);
+            await _botClient.SendMessage(chatId, text, cancellationToken: cancellationToken);
             _logger.LogInformation("Digest sent to {TargetChat}", _targetChat);
         }
         catch (Exception ex)

@@ -76,11 +76,6 @@ public sealed class AppOptions
             throw new InvalidOperationException("POSTGRES_USER is required.");
         }
 
-        if (string.IsNullOrWhiteSpace(dbPassword))
-        {
-            throw new InvalidOperationException("POSTGRES_PASSWORD is required.");
-        }
-
         var port = 5432;
         if (!string.IsNullOrWhiteSpace(dbPortRaw)
             && !int.TryParse(dbPortRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out port))
@@ -88,8 +83,14 @@ public sealed class AppOptions
             throw new InvalidOperationException("POSTGRES_PORT must be a valid number.");
         }
 
-        var connectionString =
-            $"Host={dbHost};Port={port};Database={dbName};Username={dbUser};Password={dbPassword}";
+        if (dbHost == "postgres" && !IsRunningInDocker())
+        {
+            dbHost = "localhost";
+        }
+
+        var connectionString = string.IsNullOrWhiteSpace(dbPassword)
+            ? $"Host={dbHost};Port={port};Database={dbName};Username={dbUser}"
+            : $"Host={dbHost};Port={port};Database={dbName};Username={dbUser};Password={dbPassword}";
 
         return new AppOptions
         {
@@ -99,5 +100,11 @@ public sealed class AppOptions
             TimeZone = timeZone,
             PostgresConnectionString = connectionString
         };
+    }
+
+    private static bool IsRunningInDocker()
+    {
+        return File.Exists("/.dockerenv") || 
+               !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER"));
     }
 }

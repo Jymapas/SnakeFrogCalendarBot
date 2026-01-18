@@ -13,6 +13,7 @@ public sealed record CalendarItemDto
     public bool IsAllDay { get; init; }
     public bool HasAttachment { get; init; }
     public int? BirthYear { get; init; }
+    public string? Contact { get; init; }
 }
 
 public enum CalendarItemType

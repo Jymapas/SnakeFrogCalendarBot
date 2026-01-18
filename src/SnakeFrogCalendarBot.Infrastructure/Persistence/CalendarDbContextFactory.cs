@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using Npgsql.EntityFrameworkCore.PostgreSQL;
+using Npgsql.EntityFrameworkCore.PostgreSQL.Extensions;
 
 namespace SnakeFrogCalendarBot.Infrastructure.Persistence;
 
@@ -25,8 +26,7 @@ public sealed class CalendarDbContextFactory : IDesignTimeDbContextFactory<Calen
         var optionsBuilder = new DbContextOptionsBuilder<CalendarDbContext>();
         optionsBuilder.UseNpgsql(
                 connectionString,
-                options => options.MigrationsAssembly(typeof(CalendarDbContext).Assembly.FullName))
-            .UseSnakeCaseNamingConvention();
+                options => options.MigrationsAssembly(typeof(CalendarDbContext).Assembly.FullName));
 
         return new CalendarDbContext(optionsBuilder.Options);
     }

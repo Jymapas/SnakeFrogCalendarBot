@@ -2,12 +2,13 @@ using NodaTime;
 using SnakeFrogCalendarBot.Application.Abstractions.Parsing;
 using SnakeFrogCalendarBot.Application.Abstractions.Time;
 using SnakeFrogCalendarBot.Infrastructure.Parsing;
+using AppClock = SnakeFrogCalendarBot.Application.Abstractions.Time.IClock;
 
 namespace SnakeFrogCalendarBot.Tests.Parsing;
 
 public sealed class RuDateTimeParserTests
 {
-    private sealed class TestClock : IClock
+    private sealed class TestClock : AppClock
     {
         private readonly DateTime _utcNow;
 

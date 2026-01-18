@@ -2,6 +2,7 @@ using System.Globalization;
 using NodaTime;
 using SnakeFrogCalendarBot.Application.Abstractions.Parsing;
 using SnakeFrogCalendarBot.Application.Abstractions.Time;
+using IClock = SnakeFrogCalendarBot.Application.Abstractions.Time.IClock;
 
 namespace SnakeFrogCalendarBot.Infrastructure.Parsing;
 
@@ -25,7 +26,10 @@ public sealed class RuDateTimeParser : IDateTimeParser
 
     private static readonly string[] TimeFormats =
     {
-        "HH:mm"
+        "HH:mm",
+        "H:mm",
+        "HHmm",
+        "Hmm"
     };
 
     public RuDateTimeParser(IClock clock, ITimeZoneProvider timeZoneProvider)
@@ -178,7 +182,15 @@ public sealed class RuDateTimeParser : IDateTimeParser
     {
         result = null;
 
-        if (TimeSpan.TryParseExact(input, TimeFormats, _culture, out var timeSpan))
+        var timeSpanFormats = new[]
+        {
+            "hh\\:mm",
+            "h\\:mm",
+            "hhmm",
+            "hmm"
+        };
+
+        if (TimeSpan.TryParseExact(input, timeSpanFormats, _culture, TimeSpanStyles.None, out var timeSpan))
         {
             result = new DateTimeParseResult(
                 0,
@@ -186,6 +198,18 @@ public sealed class RuDateTimeParser : IDateTimeParser
                 0,
                 timeSpan.Hours,
                 timeSpan.Minutes,
+                false);
+            return true;
+        }
+
+        if (DateTime.TryParseExact(input, TimeFormats, _culture, DateTimeStyles.None, out var dateTime))
+        {
+            result = new DateTimeParseResult(
+                0,
+                0,
+                0,
+                dateTime.Hour,
+                dateTime.Minute,
                 false);
             return true;
         }
