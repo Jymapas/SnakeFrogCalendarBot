@@ -1,3 +1,4 @@
+using SnakeFrogCalendarBot.Application.Abstractions.Parsing;
 using SnakeFrogCalendarBot.Application.Abstractions.Persistence;
 using SnakeFrogCalendarBot.Application.Abstractions.Time;
 using SnakeFrogCalendarBot.Application.Formatting;
@@ -29,6 +30,8 @@ public sealed class CommandHandlers
     private readonly SendDigest _sendDigest;
     private readonly IEventRepository _eventRepository;
     private readonly IBirthdayRepository _birthdayRepository;
+    private readonly IBirthdayDateParser _birthdayDateParser;
+    private readonly CreateBirthday _createBirthday;
 
     public CommandHandlers(
         ITelegramBotClient botClient,
@@ -45,7 +48,9 @@ public sealed class CommandHandlers
         DigestFormatter digestFormatter,
         SendDigest sendDigest,
         IEventRepository eventRepository,
-        IBirthdayRepository birthdayRepository)
+        IBirthdayRepository birthdayRepository,
+        IBirthdayDateParser birthdayDateParser,
+        CreateBirthday createBirthday)
     {
         _botClient = botClient;
         _conversationRepository = conversationRepository;
@@ -62,6 +67,8 @@ public sealed class CommandHandlers
         _sendDigest = sendDigest;
         _eventRepository = eventRepository;
         _birthdayRepository = birthdayRepository;
+        _birthdayDateParser = birthdayDateParser;
+        _createBirthday = createBirthday;
     }
 
     public async Task HandleAsync(Message message, CancellationToken cancellationToken)
@@ -132,6 +139,31 @@ public sealed class CommandHandlers
             return;
         }
 
+        var commandText = message.Text?.Trim() ?? string.Empty;
+        var commandLine = commandText.Split('\n', 2);
+        
+        if (commandLine.Length > 1 && !string.IsNullOrWhiteSpace(commandLine[1]))
+        {
+            var dataText = commandLine[1].Trim();
+            if (TryParseMultilineBirthday(dataText, out var parsedName, out var parsedDay, out var parsedMonth, out var parsedYear, out var parsedContact))
+            {
+                var command = new CreateBirthdayCommand(
+                    parsedName,
+                    parsedDay,
+                    parsedMonth,
+                    parsedYear,
+                    parsedContact);
+
+                await _createBirthday.ExecuteAsync(command, cancellationToken);
+
+                await _botClient.SendMessage(
+                    message.Chat.Id,
+                    "Сохранено",
+                    cancellationToken: cancellationToken);
+                return;
+            }
+        }
+
         var now = _clock.UtcNow;
         var state = new ConversationState(
             userId.Value,
@@ -145,6 +177,98 @@ public sealed class CommandHandlers
             message.Chat.Id,
             "Введите имя\n\nИли отправьте многострочное сообщение:\nИмя\nдд MMMM [YYYY]\n[контакт]",
             cancellationToken: cancellationToken);
+    }
+
+    private bool TryParseMultilineBirthday(
+        string text,
+        out string personName,
+        out int day,
+        out int month,
+        out int? birthYear,
+        out string? contact)
+    {
+        personName = string.Empty;
+        day = 0;
+        month = 0;
+        birthYear = null;
+        contact = null;
+
+        var lines = text.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(l => l.Trim())
+            .Where(l => !string.IsNullOrWhiteSpace(l))
+            .ToArray();
+
+        if (lines.Length < 2 || lines.Length > 3)
+        {
+            return false;
+        }
+
+        personName = lines[0];
+        if (string.IsNullOrWhiteSpace(personName))
+        {
+            return false;
+        }
+
+        var dateLine = lines[1];
+        if (!_birthdayDateParser.TryParseMonthDay(dateLine, out day, out month))
+        {
+            return false;
+        }
+
+        if (TryParseYearFromDateLine(dateLine, out var year))
+        {
+            birthYear = year;
+        }
+
+        if (lines.Length == 3)
+        {
+            contact = lines[2];
+            if (string.IsNullOrWhiteSpace(contact))
+            {
+                contact = null;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool TryParseYearFromDateLine(string dateLine, out int year)
+    {
+        year = 0;
+        
+        if (string.IsNullOrWhiteSpace(dateLine))
+        {
+            return false;
+        }
+
+        var trimmed = dateLine.Trim();
+        
+        if (trimmed.Contains('.'))
+        {
+            var dotParts = trimmed.Split('.', StringSplitOptions.RemoveEmptyEntries);
+            if (dotParts.Length >= 3)
+            {
+                var lastPart = dotParts[^1].Trim();
+                if (int.TryParse(lastPart, out var parsedYear) && parsedYear > 0 && parsedYear <= 9999)
+                {
+                    year = parsedYear;
+                    return true;
+                }
+            }
+        }
+        
+        var spaceParts = trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (spaceParts.Length >= 3)
+        {
+            var lastPart = spaceParts[^1].Trim();
+            if (int.TryParse(lastPart, out var parsedYear) && parsedYear > 0 && parsedYear <= 9999)
+            {
+                year = parsedYear;
+                return true;
+            }
+        }
+        
+        return false;
     }
 
     private async Task SendBirthdayListAsync(Message message, CancellationToken cancellationToken)
