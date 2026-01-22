@@ -19,8 +19,12 @@ public sealed class RuDateTimeParser : IDateTimeParser
 
     private static readonly string[] DateFormats =
     {
-        "yyyy-MM-dd",
         "d MMMM yyyy",
+        "d.MM",
+        "dd.MM",
+        "d.MM.yyyy",
+        "dd.MM.yyyy",
+        "yyyy-MM-dd",
         "d MMMM"
     };
 
