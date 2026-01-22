@@ -98,6 +98,18 @@ public sealed class CallbackHandlers
             return;
         }
 
+        if (data.StartsWith("birthday_edit_month:"))
+        {
+            await HandleBirthdayEditMonthAsync(callbackQuery, data, cancellationToken);
+            return;
+        }
+
+        if (data.StartsWith("birthday_edit_month_page:"))
+        {
+            await HandleBirthdayEditMonthPageAsync(callbackQuery, data, cancellationToken);
+            return;
+        }
+
         if (data.StartsWith("event_download_file:"))
         {
             var eventIdStr = data.Contains(':') ? data.Split(':')[1] : null;
@@ -800,5 +812,126 @@ public sealed class CallbackHandlers
             callbackQuery.Message?.Chat.Id ?? callbackQuery.From!.Id,
             text,
             cancellationToken: cancellationToken);
+    }
+
+    private async Task HandleBirthdayEditMonthAsync(CallbackQuery callbackQuery, string data, CancellationToken cancellationToken)
+    {
+        await _botClient.AnswerCallbackQuery(
+            callbackQuery.Id,
+            cancellationToken: cancellationToken);
+
+        var parts = data.Split(':');
+        if (parts.Length < 2 || !int.TryParse(parts[1], out var month) || month < 1 || month > 12)
+        {
+            await _botClient.SendMessage(
+                callbackQuery.Message?.Chat.Id ?? callbackQuery.From!.Id,
+                "Ошибка: неверный номер месяца",
+                cancellationToken: cancellationToken);
+            return;
+        }
+
+        await SendBirthdayEditMonthPageAsync(callbackQuery.Message?.Chat.Id ?? callbackQuery.From!.Id, month, 0, null, cancellationToken);
+    }
+
+    private async Task HandleBirthdayEditMonthPageAsync(CallbackQuery callbackQuery, string data, CancellationToken cancellationToken)
+    {
+        await _botClient.AnswerCallbackQuery(
+            callbackQuery.Id,
+            cancellationToken: cancellationToken);
+
+        var parts = data.Split(':');
+        if (parts.Length < 3 || !int.TryParse(parts[1], out var month) || month < 1 || month > 12 ||
+            !int.TryParse(parts[2], out var page) || page < 0)
+        {
+            await _botClient.SendMessage(
+                callbackQuery.Message?.Chat.Id ?? callbackQuery.From!.Id,
+                "Ошибка: неверный формат данных",
+                cancellationToken: cancellationToken);
+            return;
+        }
+
+        var messageId = callbackQuery.Message?.MessageId;
+        await SendBirthdayEditMonthPageAsync(callbackQuery.Message?.Chat.Id ?? callbackQuery.From!.Id, month, page, messageId, cancellationToken);
+    }
+
+    private async Task SendBirthdayEditMonthPageAsync(long chatId, int month, int page, int? messageId, CancellationToken cancellationToken)
+    {
+        var allBirthdays = await _listBirthdays.ExecuteAsync(cancellationToken);
+        var monthBirthdays = allBirthdays
+            .Where(b => b.Month == month)
+            .OrderBy(b => b.Day)
+            .ThenBy(b => b.PersonName)
+            .ToList();
+
+        var monthName = CultureInfo.GetCultureInfo("ru-RU").DateTimeFormat.GetMonthName(month);
+
+        if (monthBirthdays.Count == 0)
+        {
+            await _botClient.SendMessage(
+                chatId,
+                $"Дней рождения в {monthName} нет",
+                cancellationToken: cancellationToken);
+            return;
+        }
+
+        const int itemsPerPage = 10;
+        var totalPages = (monthBirthdays.Count + itemsPerPage - 1) / itemsPerPage;
+        var currentPage = Math.Min(page, totalPages - 1);
+        var startIndex = currentPage * itemsPerPage;
+        var endIndex = Math.Min(startIndex + itemsPerPage, monthBirthdays.Count);
+        var pageBirthdays = monthBirthdays.Skip(startIndex).Take(endIndex - startIndex).ToList();
+
+        var buttons = new List<List<InlineKeyboardButton>>();
+        foreach (var birthday in pageBirthdays)
+        {
+            var dayText = $"{birthday.Day:D2}.{birthday.Month:D2}";
+            buttons.Add(new List<InlineKeyboardButton>
+            {
+                InlineKeyboardButton.WithCallbackData(
+                    $"✏️ {dayText} {birthday.PersonName}",
+                    $"birthday_edit:{birthday.Id}")
+            });
+        }
+
+        if (totalPages > 1)
+        {
+            var navigationRow = new List<InlineKeyboardButton>();
+            if (currentPage > 0)
+            {
+                navigationRow.Add(InlineKeyboardButton.WithCallbackData(
+                    "◀️ Назад",
+                    $"birthday_edit_month_page:{month}:{currentPage - 1}"));
+            }
+            if (currentPage < totalPages - 1)
+            {
+                navigationRow.Add(InlineKeyboardButton.WithCallbackData(
+                    "Вперёд ▶️",
+                    $"birthday_edit_month_page:{month}:{currentPage + 1}"));
+            }
+            if (navigationRow.Count > 0)
+            {
+                buttons.Add(navigationRow);
+            }
+        }
+
+        var text = $"Выберите день рождения для редактирования ({monthName}, страница {currentPage + 1} из {totalPages}):";
+
+        if (messageId.HasValue)
+        {
+            await _botClient.EditMessageText(
+                chatId,
+                messageId.Value,
+                text,
+                replyMarkup: new InlineKeyboardMarkup(buttons),
+                cancellationToken: cancellationToken);
+        }
+        else
+        {
+            await _botClient.SendMessage(
+                chatId,
+                text,
+                replyMarkup: new InlineKeyboardMarkup(buttons),
+                cancellationToken: cancellationToken);
+        }
     }
 }

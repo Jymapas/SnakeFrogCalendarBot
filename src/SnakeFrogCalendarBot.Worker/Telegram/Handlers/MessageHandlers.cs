@@ -1189,16 +1189,39 @@ public sealed class MessageHandlers
     private static bool TryParseYearFromDateLine(string dateLine, out int year)
     {
         year = 0;
-        var parts = dateLine.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length >= 3)
+        
+        if (string.IsNullOrWhiteSpace(dateLine))
         {
-            var lastPart = parts[^1];
+            return false;
+        }
+
+        var trimmed = dateLine.Trim();
+        
+        if (trimmed.Contains('.'))
+        {
+            var dotParts = trimmed.Split('.', StringSplitOptions.RemoveEmptyEntries);
+            if (dotParts.Length >= 3)
+            {
+                var lastPart = dotParts[^1].Trim();
+                if (int.TryParse(lastPart, out var parsedYear) && parsedYear > 0 && parsedYear <= 9999)
+                {
+                    year = parsedYear;
+                    return true;
+                }
+            }
+        }
+        
+        var spaceParts = trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (spaceParts.Length >= 3)
+        {
+            var lastPart = spaceParts[^1].Trim();
             if (int.TryParse(lastPart, out var parsedYear) && parsedYear > 0 && parsedYear <= 9999)
             {
                 year = parsedYear;
                 return true;
             }
         }
+        
         return false;
     }
 

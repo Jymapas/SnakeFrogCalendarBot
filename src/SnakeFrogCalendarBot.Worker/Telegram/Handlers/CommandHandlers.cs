@@ -160,26 +160,20 @@ public sealed class CommandHandlers
     private async Task SendBirthdayListForEditAsync(Message message, CancellationToken cancellationToken)
     {
         var birthdays = await _listBirthdays.ExecuteAsync(cancellationToken);
-        var text = "Выберите день рождения для редактирования:";
-        var buttons = new List<List<InlineKeyboardButton>>();
-
-        foreach (var birthday in birthdays)
+        
+        if (birthdays.Count == 0)
         {
-            buttons.Add(new List<InlineKeyboardButton>
-            {
-                InlineKeyboardButton.WithCallbackData($"✏️ {birthday.PersonName}", $"birthday_edit:{birthday.Id}")
-            });
-        }
-
-        if (buttons.Count == 0)
-        {
-            text = "Дней рождения пока нет";
+            await _botClient.SendMessage(
+                message.Chat.Id,
+                "Дней рождения пока нет",
+                cancellationToken: cancellationToken);
+            return;
         }
 
         await _botClient.SendMessage(
             message.Chat.Id,
-            text,
-            replyMarkup: buttons.Count > 0 ? new InlineKeyboardMarkup(buttons) : null,
+            "Выберите месяц для редактирования дня рождения:",
+            replyMarkup: InlineKeyboards.MonthSelectionKeyboardForEdit(),
             cancellationToken: cancellationToken);
     }
 
