@@ -95,6 +95,7 @@ try
                 var appOptions = sp.GetRequiredService<AppOptions>();
                 var listBirthdays = sp.GetRequiredService<ListBirthdays>();
                 var birthdayFormatter = sp.GetRequiredService<BirthdayListFormatter>();
+                var timeZoneProvider = sp.GetRequiredService<ITimeZoneProvider>();
                 return new CallbackHandlers(
                     botClient,
                     conversationRepository,
@@ -108,7 +109,8 @@ try
                     appOptions,
                     sp,
                     listBirthdays,
-                    birthdayFormatter);
+                    birthdayFormatter,
+                    timeZoneProvider);
             });
             services.AddHostedService<BotHostedService>();
 

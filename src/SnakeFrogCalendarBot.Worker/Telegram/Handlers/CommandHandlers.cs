@@ -401,27 +401,21 @@ public sealed class CommandHandlers
 
     private async Task SendEventListForEditAsync(Message message, CancellationToken cancellationToken)
     {
-        var events = await _eventRepository.ListAllAsync(cancellationToken);
-        var text = "Выберите событие для редактирования:";
-        var buttons = new List<List<InlineKeyboardButton>>();
-
-        foreach (var eventEntity in events)
+        var events = await _eventRepository.ListUpcomingForEditAsync(cancellationToken);
+        
+        if (events.Count == 0)
         {
-            buttons.Add(new List<InlineKeyboardButton>
-            {
-                InlineKeyboardButton.WithCallbackData($"✏️ {eventEntity.Title}", $"event_edit:{eventEntity.Id}")
-            });
-        }
-
-        if (buttons.Count == 0)
-        {
-            text = "Событий пока нет";
+            await _botClient.SendMessage(
+                message.Chat.Id,
+                "Событий пока нет",
+                cancellationToken: cancellationToken);
+            return;
         }
 
         await _botClient.SendMessage(
             message.Chat.Id,
-            text,
-            replyMarkup: buttons.Count > 0 ? new InlineKeyboardMarkup(buttons) : null,
+            "Выберите месяц для редактирования события:",
+            replyMarkup: InlineKeyboards.EventMonthSelectionKeyboardForEdit(),
             cancellationToken: cancellationToken);
     }
 

@@ -133,4 +133,32 @@ public static class InlineKeyboards
 
         return new InlineKeyboardMarkup(buttons);
     }
+
+    public static InlineKeyboardMarkup EventMonthSelectionKeyboardForEdit()
+    {
+        var monthNames = new[]
+        {
+            "Январь", "Февраль", "Март", "Апрель",
+            "Май", "Июнь", "Июль", "Август",
+            "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"
+        };
+
+        var buttons = new List<List<InlineKeyboardButton>>();
+        
+        // Группируем месяцы по 3 в ряд
+        for (int i = 0; i < monthNames.Length; i += 3)
+        {
+            var row = new List<InlineKeyboardButton>();
+            for (int j = 0; j < 3 && i + j < monthNames.Length; j++)
+            {
+                var monthNumber = i + j + 1;
+                row.Add(InlineKeyboardButton.WithCallbackData(
+                    monthNames[i + j], 
+                    $"event_edit_month:{monthNumber}"));
+            }
+            buttons.Add(row);
+        }
+
+        return new InlineKeyboardMarkup(buttons);
+    }
 }
