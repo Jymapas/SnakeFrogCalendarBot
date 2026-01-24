@@ -10,11 +10,6 @@ public static class ReplyKeyboards
         {
             new[]
             {
-                new KeyboardButton("📅 На неделю"),
-                new KeyboardButton("📅 На месяц")
-            },
-            new[]
-            {
                 new KeyboardButton("➕ Событие"),
                 new KeyboardButton("➕ День рождения")
             },
@@ -22,6 +17,11 @@ public static class ReplyKeyboards
             {
                 new KeyboardButton("📅 События"),
                 new KeyboardButton("🎂 Дни рождения")
+            },
+            new[]
+            {
+                new KeyboardButton("📅 На неделю"),
+                new KeyboardButton("📅 На месяц")
             },
             new[]
             {
