@@ -15,6 +15,11 @@ public static class InlineKeyboards
             },
             new[]
             {
+                InlineKeyboardButton.WithCallbackData("📅 На неделю", "event_view_week:0"),
+                InlineKeyboardButton.WithCallbackData("📅 На месяц", "event_view_month:0")
+            },
+            new[]
+            {
                 InlineKeyboardButton.WithCallbackData("➕ Добавить событие", "cmd:event_add"),
                 InlineKeyboardButton.WithCallbackData("➕ Добавить день рождения", "cmd:birthday_add")
             },

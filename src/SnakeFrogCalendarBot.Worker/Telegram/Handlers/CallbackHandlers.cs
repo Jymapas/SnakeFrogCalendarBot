@@ -1549,6 +1549,28 @@ public sealed class CallbackHandlers
             return instant.ToDateTimeUtc();
         }).ToList();
 
+        var allBirthdays = await _listBirthdays.ExecuteAsync(cancellationToken);
+        var weekBirthdays = allBirthdays
+            .Where(b =>
+            {
+                var birthdayDate = new NodaTime.LocalDate(weekStart.Year, b.Month, b.Day);
+                if (birthdayDate < weekStart)
+                {
+                    birthdayDate = new NodaTime.LocalDate(weekStart.Year + 1, b.Month, b.Day);
+                }
+                return birthdayDate >= weekStart && birthdayDate <= weekEnd;
+            })
+            .OrderBy(b =>
+            {
+                var birthdayDate = new NodaTime.LocalDate(weekStart.Year, b.Month, b.Day);
+                if (birthdayDate < weekStart)
+                {
+                    birthdayDate = new NodaTime.LocalDate(weekStart.Year + 1, b.Month, b.Day);
+                }
+                return birthdayDate;
+            })
+            .ToList();
+
         var eventAttachments = new Dictionary<int, Attachment?>();
         foreach (var eventEntity in weekEvents)
         {
@@ -1558,9 +1580,35 @@ public sealed class CallbackHandlers
 
         var culture = CultureInfo.GetCultureInfo("ru-RU");
         var weekText = $"{weekStart.ToString("d MMMM", culture)} — {weekEnd.ToString("d MMMM yyyy", culture)}";
-        var text = weekEvents.Count == 0
-            ? $"События на неделю ({weekText}) отсутствуют"
-            : $"События на неделю ({weekText}):\n\n{_eventFormatter.Format(weekEvents, eventAttachments)}";
+        
+        var textBuilder = new StringBuilder();
+        textBuilder.AppendLine($"Календарь на неделю ({weekText}):");
+        textBuilder.AppendLine();
+
+        if (weekEvents.Count == 0 && weekBirthdays.Count == 0)
+        {
+            textBuilder.AppendLine("События и дни рождения отсутствуют");
+        }
+        else
+        {
+            if (weekEvents.Count > 0)
+            {
+                textBuilder.AppendLine("📅 События:");
+                textBuilder.AppendLine(_eventFormatter.Format(weekEvents, eventAttachments));
+                if (weekBirthdays.Count > 0)
+                {
+                    textBuilder.AppendLine();
+                }
+            }
+
+            if (weekBirthdays.Count > 0)
+            {
+                textBuilder.AppendLine("🎂 Дни рождения:");
+                textBuilder.AppendLine(_birthdayFormatter.Format(weekBirthdays));
+            }
+        }
+
+        var text = textBuilder.ToString();
 
         var buttons = new List<List<InlineKeyboardButton>>();
         foreach (var eventEntity in weekEvents)
@@ -1570,6 +1618,14 @@ public sealed class CallbackHandlers
             buttons.Add(new List<InlineKeyboardButton>
             {
                 InlineKeyboardButton.WithCallbackData($"📅 {eventEntity.Title}{attachmentIndicator}", $"event_view:{eventEntity.Id}")
+            });
+        }
+
+        foreach (var birthday in weekBirthdays)
+        {
+            buttons.Add(new List<InlineKeyboardButton>
+            {
+                InlineKeyboardButton.WithCallbackData($"🎂 {birthday.PersonName}", $"birthday_edit:{birthday.Id}")
             });
         }
 
@@ -1662,6 +1718,12 @@ public sealed class CallbackHandlers
             return instant.ToDateTimeUtc();
         }).ToList();
 
+        var allBirthdays = await _listBirthdays.ExecuteAsync(cancellationToken);
+        var monthBirthdays = allBirthdays
+            .Where(b => b.Month == targetMonth.Month)
+            .OrderBy(b => b.Day)
+            .ToList();
+
         var eventAttachments = new Dictionary<int, Attachment?>();
         foreach (var eventEntity in monthEvents)
         {
@@ -1671,9 +1733,35 @@ public sealed class CallbackHandlers
 
         var culture = CultureInfo.GetCultureInfo("ru-RU");
         var monthName = targetMonth.ToString("MMMM yyyy", culture);
-        var text = monthEvents.Count == 0
-            ? $"События в {monthName} отсутствуют"
-            : $"События в {monthName}:\n\n{_eventFormatter.Format(monthEvents, eventAttachments)}";
+        
+        var textBuilder = new StringBuilder();
+        textBuilder.AppendLine($"Календарь на {monthName}:");
+        textBuilder.AppendLine();
+
+        if (monthEvents.Count == 0 && monthBirthdays.Count == 0)
+        {
+            textBuilder.AppendLine("События и дни рождения отсутствуют");
+        }
+        else
+        {
+            if (monthEvents.Count > 0)
+            {
+                textBuilder.AppendLine("📅 События:");
+                textBuilder.AppendLine(_eventFormatter.Format(monthEvents, eventAttachments));
+                if (monthBirthdays.Count > 0)
+                {
+                    textBuilder.AppendLine();
+                }
+            }
+
+            if (monthBirthdays.Count > 0)
+            {
+                textBuilder.AppendLine("🎂 Дни рождения:");
+                textBuilder.AppendLine(_birthdayFormatter.Format(monthBirthdays));
+            }
+        }
+
+        var text = textBuilder.ToString();
 
         var buttons = new List<List<InlineKeyboardButton>>();
         foreach (var eventEntity in monthEvents)
@@ -1683,6 +1771,14 @@ public sealed class CallbackHandlers
             buttons.Add(new List<InlineKeyboardButton>
             {
                 InlineKeyboardButton.WithCallbackData($"📅 {eventEntity.Title}{attachmentIndicator}", $"event_view:{eventEntity.Id}")
+            });
+        }
+
+        foreach (var birthday in monthBirthdays)
+        {
+            buttons.Add(new List<InlineKeyboardButton>
+            {
+                InlineKeyboardButton.WithCallbackData($"🎂 {birthday.PersonName}", $"birthday_edit:{birthday.Id}")
             });
         }
 
