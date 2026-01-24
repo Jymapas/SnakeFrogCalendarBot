@@ -354,20 +354,19 @@ public sealed class CommandHandlers
     {
         var events = await _listUpcomingItems.ExecuteAsync(cancellationToken);
         
-        var eventAttachments = new Dictionary<int, Attachment?>();
-        foreach (var eventEntity in events)
+        if (events.Count == 0)
         {
-            var currentAttachment = await _attachmentRepository.GetCurrentByEventIdAsync(eventEntity.Id, cancellationToken);
-            eventAttachments[eventEntity.Id] = currentAttachment;
+            await _botClient.SendMessage(
+                message.Chat.Id,
+                "Предстоящих событий нет",
+                cancellationToken: cancellationToken);
+            return;
         }
-
-        var text = _eventFormatter.Format(events, eventAttachments);
-        var inlineKeyboard = await CreateEventListInlineKeyboard(events, cancellationToken);
 
         await _botClient.SendMessage(
             message.Chat.Id,
-            text,
-            replyMarkup: inlineKeyboard,
+            "Выберите месяц для просмотра событий:",
+            replyMarkup: InlineKeyboards.EventMonthSelectionKeyboardForList(),
             cancellationToken: cancellationToken);
     }
 

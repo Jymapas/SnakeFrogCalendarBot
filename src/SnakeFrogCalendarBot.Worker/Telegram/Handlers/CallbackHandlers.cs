@@ -34,6 +34,9 @@ public sealed class CallbackHandlers
     private readonly ListBirthdays _listBirthdays;
     private readonly BirthdayListFormatter _birthdayFormatter;
     private readonly ITimeZoneProvider _timeZoneProvider;
+    private readonly ListUpcomingItems _listUpcomingItems;
+    private readonly IAttachmentRepository _attachmentRepository;
+    private readonly EventListFormatter _eventFormatter;
 
     public CallbackHandlers(
         ITelegramBotClient botClient,
@@ -49,7 +52,10 @@ public sealed class CallbackHandlers
         IServiceProvider serviceProvider,
         ListBirthdays listBirthdays,
         BirthdayListFormatter birthdayFormatter,
-        ITimeZoneProvider timeZoneProvider)
+        ITimeZoneProvider timeZoneProvider,
+        ListUpcomingItems listUpcomingItems,
+        IAttachmentRepository attachmentRepository,
+        EventListFormatter eventFormatter)
     {
         _botClient = botClient;
         _conversationRepository = conversationRepository;
@@ -66,6 +72,9 @@ public sealed class CallbackHandlers
         _listBirthdays = listBirthdays;
         _birthdayFormatter = birthdayFormatter;
         _timeZoneProvider = timeZoneProvider;
+        _listUpcomingItems = listUpcomingItems;
+        _attachmentRepository = attachmentRepository;
+        _eventFormatter = eventFormatter;
     }
 
     public async Task HandleAsync(CallbackQuery callbackQuery, CancellationToken cancellationToken)
@@ -122,6 +131,18 @@ public sealed class CallbackHandlers
         if (data.StartsWith("event_edit_month_page:"))
         {
             await HandleEventEditMonthPageAsync(callbackQuery, data, cancellationToken);
+            return;
+        }
+
+        if (data.StartsWith("event_list_month:"))
+        {
+            await HandleEventListMonthAsync(callbackQuery, data, cancellationToken);
+            return;
+        }
+
+        if (data.StartsWith("event_list_month_page:"))
+        {
+            await HandleEventListMonthPageAsync(callbackQuery, data, cancellationToken);
             return;
         }
 
@@ -1101,6 +1122,179 @@ public sealed class CallbackHandlers
             await _botClient.SendMessage(
                 chatId,
                 text,
+                replyMarkup: new InlineKeyboardMarkup(buttons),
+                cancellationToken: cancellationToken);
+        }
+    }
+
+    private async Task HandleEventListMonthAsync(CallbackQuery callbackQuery, string data, CancellationToken cancellationToken)
+    {
+        await _botClient.AnswerCallbackQuery(
+            callbackQuery.Id,
+            cancellationToken: cancellationToken);
+
+        var parts = data.Split(':');
+        if (parts.Length < 2 || !int.TryParse(parts[1], out var month) || month < 1 || month > 12)
+        {
+            await _botClient.SendMessage(
+                callbackQuery.Message?.Chat.Id ?? callbackQuery.From!.Id,
+                "Ошибка: неверный номер месяца",
+                cancellationToken: cancellationToken);
+            return;
+        }
+
+        await SendEventListMonthPageAsync(callbackQuery.Message?.Chat.Id ?? callbackQuery.From!.Id, month, 0, null, cancellationToken);
+    }
+
+    private async Task HandleEventListMonthPageAsync(CallbackQuery callbackQuery, string data, CancellationToken cancellationToken)
+    {
+        await _botClient.AnswerCallbackQuery(
+            callbackQuery.Id,
+            cancellationToken: cancellationToken);
+
+        var parts = data.Split(':');
+        if (parts.Length < 3 || !int.TryParse(parts[1], out var month) || month < 1 || month > 12 ||
+            !int.TryParse(parts[2], out var page) || page < 0)
+        {
+            await _botClient.SendMessage(
+                callbackQuery.Message?.Chat.Id ?? callbackQuery.From!.Id,
+                "Ошибка: неверный формат данных",
+                cancellationToken: cancellationToken);
+            return;
+        }
+
+        var messageId = callbackQuery.Message?.MessageId;
+        await SendEventListMonthPageAsync(callbackQuery.Message?.Chat.Id ?? callbackQuery.From!.Id, month, page, messageId, cancellationToken);
+    }
+
+    private async Task SendEventListMonthPageAsync(long chatId, int month, int page, int? messageId, CancellationToken cancellationToken)
+    {
+        var now = _clock.UtcNow;
+        var timeZone = NodaTime.DateTimeZoneProviders.Tzdb[_timeZoneProvider.GetTimeZoneId()];
+        var nowInZone = NodaTime.Instant.FromDateTimeUtc(now).InZone(timeZone);
+        var today = nowInZone.Date;
+
+        var allUpcomingEvents = await _listUpcomingItems.ExecuteAsync(cancellationToken);
+        
+        var monthEvents = allUpcomingEvents
+            .Where(e =>
+            {
+                var eventMonth = 0;
+
+                if (e.Kind == Domain.Enums.EventKind.OneOff && e.OccursAtUtc.HasValue)
+                {
+                    var eventInstant = NodaTime.Instant.FromDateTimeUtc(e.OccursAtUtc.Value.UtcDateTime);
+                    var eventInZone = eventInstant.InZone(timeZone);
+                    eventMonth = eventInZone.Month;
+                }
+                else if (e.Kind == Domain.Enums.EventKind.Yearly && e.Month.HasValue && e.Day.HasValue)
+                {
+                    var thisYear = new NodaTime.LocalDate(today.Year, e.Month.Value, e.Day.Value);
+                    var nextOccurrence = thisYear >= today ? thisYear : thisYear.PlusYears(1);
+                    eventMonth = nextOccurrence.Month;
+                }
+
+                return eventMonth == month;
+            })
+            .OrderBy(e =>
+            {
+                if (e.Kind == Domain.Enums.EventKind.OneOff && e.OccursAtUtc.HasValue)
+                {
+                    return e.OccursAtUtc.Value.UtcDateTime;
+                }
+
+                var thisYear = new NodaTime.LocalDate(today.Year, e.Month!.Value, e.Day!.Value);
+                var nextOccurrence = thisYear >= today ? thisYear : thisYear.PlusYears(1);
+                var localDateTime = e.IsAllDay
+                    ? nextOccurrence.AtMidnight()
+                    : nextOccurrence.At(e.TimeOfDay.HasValue ? NodaTime.LocalTime.FromTicksSinceMidnight(e.TimeOfDay.Value.Ticks) : NodaTime.LocalTime.Midnight);
+                var zonedDateTime = localDateTime.InZoneLeniently(timeZone);
+                var instant = zonedDateTime.ToInstant();
+                return instant.ToDateTimeUtc();
+            })
+            .ToList();
+
+        var monthName = CultureInfo.GetCultureInfo("ru-RU").DateTimeFormat.GetMonthName(month);
+
+        if (monthEvents.Count == 0)
+        {
+            await _botClient.SendMessage(
+                chatId,
+                $"События в {monthName} отсутствуют",
+                cancellationToken: cancellationToken);
+            return;
+        }
+
+        const int itemsPerPage = 10;
+        var totalPages = (monthEvents.Count + itemsPerPage - 1) / itemsPerPage;
+        var currentPage = Math.Min(page, totalPages - 1);
+        var startIndex = currentPage * itemsPerPage;
+        var endIndex = Math.Min(startIndex + itemsPerPage, monthEvents.Count);
+        var pageEvents = monthEvents.Skip(startIndex).Take(endIndex - startIndex).ToList();
+
+        var eventAttachments = new Dictionary<int, Attachment?>();
+        foreach (var eventEntity in pageEvents)
+        {
+            var currentAttachment = await _attachmentRepository.GetCurrentByEventIdAsync(eventEntity.Id, cancellationToken);
+            eventAttachments[eventEntity.Id] = currentAttachment;
+        }
+
+        var text = _eventFormatter.Format(pageEvents, eventAttachments);
+        var buttons = new List<List<InlineKeyboardButton>>();
+
+        foreach (var eventEntity in pageEvents)
+        {
+            var currentAttachment = eventAttachments.ContainsKey(eventEntity.Id) ? eventAttachments[eventEntity.Id] : null;
+            var attachmentIndicator = currentAttachment != null ? " 📎" : "";
+            buttons.Add(new List<InlineKeyboardButton>
+            {
+                InlineKeyboardButton.WithCallbackData($"📅 {eventEntity.Title}{attachmentIndicator}", $"event_edit:{eventEntity.Id}")
+            });
+        }
+
+        if (totalPages > 1)
+        {
+            var navigationRow = new List<InlineKeyboardButton>();
+            if (currentPage > 0)
+            {
+                navigationRow.Add(InlineKeyboardButton.WithCallbackData(
+                    "◀️ Назад",
+                    $"event_list_month_page:{month}:{currentPage - 1}"));
+            }
+            if (currentPage < totalPages - 1)
+            {
+                navigationRow.Add(InlineKeyboardButton.WithCallbackData(
+                    "Вперёд ▶️",
+                    $"event_list_month_page:{month}:{currentPage + 1}"));
+            }
+            if (navigationRow.Count > 0)
+            {
+                buttons.Add(navigationRow);
+            }
+        }
+
+        buttons.Add(new List<InlineKeyboardButton>
+        {
+            InlineKeyboardButton.WithCallbackData("🔙 Назад к месяцам", "cmd:event_list")
+        });
+
+        var pageInfo = totalPages > 1 ? $" (страница {currentPage + 1} из {totalPages})" : "";
+        var fullText = $"{monthName}{pageInfo}:\n\n{text}";
+
+        if (messageId.HasValue)
+        {
+            await _botClient.EditMessageText(
+                chatId,
+                messageId.Value,
+                fullText,
+                replyMarkup: new InlineKeyboardMarkup(buttons),
+                cancellationToken: cancellationToken);
+        }
+        else
+        {
+            await _botClient.SendMessage(
+                chatId,
+                fullText,
                 replyMarkup: new InlineKeyboardMarkup(buttons),
                 cancellationToken: cancellationToken);
         }

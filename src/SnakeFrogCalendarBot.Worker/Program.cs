@@ -96,6 +96,9 @@ try
                 var listBirthdays = sp.GetRequiredService<ListBirthdays>();
                 var birthdayFormatter = sp.GetRequiredService<BirthdayListFormatter>();
                 var timeZoneProvider = sp.GetRequiredService<ITimeZoneProvider>();
+                var listUpcomingItems = sp.GetRequiredService<ListUpcomingItems>();
+                var attachmentRepository = sp.GetRequiredService<IAttachmentRepository>();
+                var eventFormatter = sp.GetRequiredService<EventListFormatter>();
                 return new CallbackHandlers(
                     botClient,
                     conversationRepository,
@@ -110,7 +113,10 @@ try
                     sp,
                     listBirthdays,
                     birthdayFormatter,
-                    timeZoneProvider);
+                    timeZoneProvider,
+                    listUpcomingItems,
+                    attachmentRepository,
+                    eventFormatter);
             });
             services.AddHostedService<BotHostedService>();
 
