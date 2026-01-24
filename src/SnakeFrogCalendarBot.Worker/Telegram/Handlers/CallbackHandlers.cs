@@ -1477,7 +1477,7 @@ public sealed class CallbackHandlers
         await SendEventViewMonthAsync(callbackQuery.Message?.Chat.Id ?? callbackQuery.From!.Id, monthOffset, messageId, cancellationToken);
     }
 
-    private async Task SendEventViewWeekAsync(long chatId, int weekOffset, int? messageId, CancellationToken cancellationToken)
+    internal async Task SendEventViewWeekAsync(long chatId, int weekOffset, int? messageId, CancellationToken cancellationToken)
     {
         var now = _clock.UtcNow;
         var timeZone = NodaTime.DateTimeZoneProviders.Tzdb[_timeZoneProvider.GetTimeZoneId()];
@@ -1658,7 +1658,7 @@ public sealed class CallbackHandlers
         }
     }
 
-    private async Task SendEventViewMonthAsync(long chatId, int monthOffset, int? messageId, CancellationToken cancellationToken)
+    internal async Task SendEventViewMonthAsync(long chatId, int monthOffset, int? messageId, CancellationToken cancellationToken)
     {
         var now = _clock.UtcNow;
         var timeZone = NodaTime.DateTimeZoneProviders.Tzdb[_timeZoneProvider.GetTimeZoneId()];

@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using SnakeFrogCalendarBot.Application.Abstractions.Parsing;
 using SnakeFrogCalendarBot.Application.Abstractions.Persistence;
 using SnakeFrogCalendarBot.Application.Abstractions.Time;
@@ -32,6 +33,8 @@ public sealed class CommandHandlers
     private readonly IBirthdayRepository _birthdayRepository;
     private readonly IBirthdayDateParser _birthdayDateParser;
     private readonly CreateBirthday _createBirthday;
+    private readonly ITimeZoneProvider _timeZoneProvider;
+    private readonly IServiceProvider _serviceProvider;
 
     public CommandHandlers(
         ITelegramBotClient botClient,
@@ -50,7 +53,9 @@ public sealed class CommandHandlers
         IEventRepository eventRepository,
         IBirthdayRepository birthdayRepository,
         IBirthdayDateParser birthdayDateParser,
-        CreateBirthday createBirthday)
+        CreateBirthday createBirthday,
+        ITimeZoneProvider timeZoneProvider,
+        IServiceProvider serviceProvider)
     {
         _botClient = botClient;
         _conversationRepository = conversationRepository;
@@ -69,6 +74,8 @@ public sealed class CommandHandlers
         _birthdayRepository = birthdayRepository;
         _birthdayDateParser = birthdayDateParser;
         _createBirthday = createBirthday;
+        _timeZoneProvider = timeZoneProvider;
+        _serviceProvider = serviceProvider;
     }
 
     public async Task HandleAsync(Message message, CancellationToken cancellationToken)
@@ -120,6 +127,12 @@ public sealed class CommandHandlers
             case BotCommands.Start:
             case BotCommands.Menu:
                 await ShowMainMenuAsync(message, cancellationToken);
+                break;
+            case "📅 На неделю":
+                await SendEventViewWeekFromCommandAsync(message, cancellationToken);
+                break;
+            case "📅 На месяц":
+                await SendEventViewMonthFromCommandAsync(message, cancellationToken);
                 break;
             default:
                 var availableCommands = string.Join(", ", BotCommands.All);
@@ -527,5 +540,19 @@ public sealed class CommandHandlers
             text,
             replyMarkup: ReplyKeyboards.MainKeyboard(),
             cancellationToken: cancellationToken);
+    }
+
+    private async Task SendEventViewWeekFromCommandAsync(Message message, CancellationToken cancellationToken)
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var callbackHandlers = scope.ServiceProvider.GetRequiredService<CallbackHandlers>();
+        await callbackHandlers.SendEventViewWeekAsync(message.Chat.Id, 0, null, cancellationToken);
+    }
+
+    private async Task SendEventViewMonthFromCommandAsync(Message message, CancellationToken cancellationToken)
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var callbackHandlers = scope.ServiceProvider.GetRequiredService<CallbackHandlers>();
+        await callbackHandlers.SendEventViewMonthAsync(message.Chat.Id, 0, null, cancellationToken);
     }
 }

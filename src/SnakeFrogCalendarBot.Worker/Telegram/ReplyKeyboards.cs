@@ -10,6 +10,11 @@ public static class ReplyKeyboards
         {
             new[]
             {
+                new KeyboardButton("📅 На неделю"),
+                new KeyboardButton("📅 На месяц")
+            },
+            new[]
+            {
                 new KeyboardButton("➕ Событие"),
                 new KeyboardButton("➕ День рождения")
             },
