@@ -146,6 +146,18 @@ public sealed class CallbackHandlers
             return;
         }
 
+        if (data.StartsWith("event_view_week:"))
+        {
+            await HandleEventViewWeekAsync(callbackQuery, data, cancellationToken);
+            return;
+        }
+
+        if (data.StartsWith("event_view_month:"))
+        {
+            await HandleEventViewMonthAsync(callbackQuery, data, cancellationToken);
+            return;
+        }
+
         if (data.StartsWith("event_download_file:"))
         {
             var eventIdStr = data.Contains(':') ? data.Split(':')[1] : null;
@@ -1420,6 +1432,284 @@ public sealed class CallbackHandlers
             await _botClient.SendMessage(
                 chatId,
                 fullText,
+                replyMarkup: new InlineKeyboardMarkup(buttons),
+                cancellationToken: cancellationToken);
+        }
+    }
+
+    private async Task HandleEventViewWeekAsync(CallbackQuery callbackQuery, string data, CancellationToken cancellationToken)
+    {
+        await _botClient.AnswerCallbackQuery(
+            callbackQuery.Id,
+            cancellationToken: cancellationToken);
+
+        var parts = data.Split(':');
+        if (parts.Length < 2 || !int.TryParse(parts[1], out var weekOffset))
+        {
+            await _botClient.SendMessage(
+                callbackQuery.Message?.Chat.Id ?? callbackQuery.From!.Id,
+                "Ошибка: неверный формат данных",
+                cancellationToken: cancellationToken);
+            return;
+        }
+
+        var messageId = callbackQuery.Message?.MessageId;
+        await SendEventViewWeekAsync(callbackQuery.Message?.Chat.Id ?? callbackQuery.From!.Id, weekOffset, messageId, cancellationToken);
+    }
+
+    private async Task HandleEventViewMonthAsync(CallbackQuery callbackQuery, string data, CancellationToken cancellationToken)
+    {
+        await _botClient.AnswerCallbackQuery(
+            callbackQuery.Id,
+            cancellationToken: cancellationToken);
+
+        var parts = data.Split(':');
+        if (parts.Length < 2 || !int.TryParse(parts[1], out var monthOffset))
+        {
+            await _botClient.SendMessage(
+                callbackQuery.Message?.Chat.Id ?? callbackQuery.From!.Id,
+                "Ошибка: неверный формат данных",
+                cancellationToken: cancellationToken);
+            return;
+        }
+
+        var messageId = callbackQuery.Message?.MessageId;
+        await SendEventViewMonthAsync(callbackQuery.Message?.Chat.Id ?? callbackQuery.From!.Id, monthOffset, messageId, cancellationToken);
+    }
+
+    private async Task SendEventViewWeekAsync(long chatId, int weekOffset, int? messageId, CancellationToken cancellationToken)
+    {
+        var now = _clock.UtcNow;
+        var timeZone = NodaTime.DateTimeZoneProviders.Tzdb[_timeZoneProvider.GetTimeZoneId()];
+        var nowInZone = NodaTime.Instant.FromDateTimeUtc(now).InZone(timeZone);
+        var today = nowInZone.Date;
+
+        var targetDate = today.PlusWeeks(weekOffset);
+        var daysFromMonday = ((int)targetDate.DayOfWeek - (int)NodaTime.IsoDayOfWeek.Monday + 7) % 7;
+        var weekStart = targetDate.PlusDays(-daysFromMonday);
+        var weekEnd = weekStart.PlusDays(6);
+
+        var periodStart = weekStart.AtMidnight();
+        var periodEnd = weekEnd.At(NodaTime.LocalTime.MaxValue);
+
+        var periodStartInstant = periodStart.InZoneLeniently(timeZone).ToInstant();
+        var periodEndInstant = periodEnd.InZoneLeniently(timeZone).ToInstant();
+
+        var allEvents = await _listUpcomingItems.ExecuteAsync(cancellationToken);
+        var weekEvents = new List<Domain.Entities.Event>();
+
+        foreach (var eventEntity in allEvents)
+        {
+            NodaTime.Instant? eventInstant = null;
+
+            if (eventEntity.Kind == Domain.Enums.EventKind.OneOff && eventEntity.OccursAtUtc.HasValue)
+            {
+                eventInstant = NodaTime.Instant.FromDateTimeUtc(eventEntity.OccursAtUtc.Value.UtcDateTime);
+            }
+            else if (eventEntity.Kind == Domain.Enums.EventKind.Yearly && eventEntity.Month.HasValue && eventEntity.Day.HasValue)
+            {
+                var yearlyDate = new NodaTime.LocalDate(weekStart.Year, eventEntity.Month.Value, eventEntity.Day.Value);
+                if (yearlyDate < weekStart)
+                {
+                    yearlyDate = new NodaTime.LocalDate(weekStart.Year + 1, eventEntity.Month.Value, eventEntity.Day.Value);
+                }
+
+                if (yearlyDate >= weekStart && yearlyDate <= weekEnd)
+                {
+                    var localDateTime = eventEntity.IsAllDay
+                        ? yearlyDate.AtMidnight()
+                        : yearlyDate.At(eventEntity.TimeOfDay.HasValue ? NodaTime.LocalTime.FromTicksSinceMidnight(eventEntity.TimeOfDay.Value.Ticks) : NodaTime.LocalTime.Midnight);
+                    eventInstant = localDateTime.InZoneLeniently(timeZone).ToInstant();
+                }
+            }
+
+            if (eventInstant.HasValue && eventInstant.Value >= periodStartInstant && eventInstant.Value <= periodEndInstant)
+            {
+                weekEvents.Add(eventEntity);
+            }
+        }
+
+        weekEvents = weekEvents.OrderBy(e =>
+        {
+            if (e.Kind == Domain.Enums.EventKind.OneOff && e.OccursAtUtc.HasValue)
+            {
+                return e.OccursAtUtc.Value.UtcDateTime;
+            }
+
+            var yearlyDate = new NodaTime.LocalDate(weekStart.Year, e.Month!.Value, e.Day!.Value);
+            if (yearlyDate < weekStart)
+            {
+                yearlyDate = new NodaTime.LocalDate(weekStart.Year + 1, e.Month.Value, e.Day.Value);
+            }
+            var localDateTime = e.IsAllDay
+                ? yearlyDate.AtMidnight()
+                : yearlyDate.At(e.TimeOfDay.HasValue ? NodaTime.LocalTime.FromTicksSinceMidnight(e.TimeOfDay.Value.Ticks) : NodaTime.LocalTime.Midnight);
+            var zonedDateTime = localDateTime.InZoneLeniently(timeZone);
+            var instant = zonedDateTime.ToInstant();
+            return instant.ToDateTimeUtc();
+        }).ToList();
+
+        var eventAttachments = new Dictionary<int, Attachment?>();
+        foreach (var eventEntity in weekEvents)
+        {
+            var currentAttachment = await _attachmentRepository.GetCurrentByEventIdAsync(eventEntity.Id, cancellationToken);
+            eventAttachments[eventEntity.Id] = currentAttachment;
+        }
+
+        var culture = CultureInfo.GetCultureInfo("ru-RU");
+        var weekText = $"{weekStart.ToString("d MMMM", culture)} — {weekEnd.ToString("d MMMM yyyy", culture)}";
+        var text = weekEvents.Count == 0
+            ? $"События на неделю ({weekText}) отсутствуют"
+            : $"События на неделю ({weekText}):\n\n{_eventFormatter.Format(weekEvents, eventAttachments)}";
+
+        var buttons = new List<List<InlineKeyboardButton>>();
+        foreach (var eventEntity in weekEvents)
+        {
+            var currentAttachment = eventAttachments.ContainsKey(eventEntity.Id) ? eventAttachments[eventEntity.Id] : null;
+            var attachmentIndicator = currentAttachment != null ? " 📎" : "";
+            buttons.Add(new List<InlineKeyboardButton>
+            {
+                InlineKeyboardButton.WithCallbackData($"📅 {eventEntity.Title}{attachmentIndicator}", $"event_view:{eventEntity.Id}")
+            });
+        }
+
+        var navigationRow = new List<InlineKeyboardButton>();
+        navigationRow.Add(InlineKeyboardButton.WithCallbackData("◀️ Предыдущая неделя", $"event_view_week:{weekOffset - 1}"));
+        navigationRow.Add(InlineKeyboardButton.WithCallbackData("Следующая неделя ▶️", $"event_view_week:{weekOffset + 1}"));
+        buttons.Add(navigationRow);
+
+        buttons.Add(new List<InlineKeyboardButton>
+        {
+            InlineKeyboardButton.WithCallbackData("🔙 Меню событий", "menu:events")
+        });
+
+        if (messageId.HasValue)
+        {
+            await _botClient.EditMessageText(
+                chatId,
+                messageId.Value,
+                text,
+                replyMarkup: new InlineKeyboardMarkup(buttons),
+                cancellationToken: cancellationToken);
+        }
+        else
+        {
+            await _botClient.SendMessage(
+                chatId,
+                text,
+                replyMarkup: new InlineKeyboardMarkup(buttons),
+                cancellationToken: cancellationToken);
+        }
+    }
+
+    private async Task SendEventViewMonthAsync(long chatId, int monthOffset, int? messageId, CancellationToken cancellationToken)
+    {
+        var now = _clock.UtcNow;
+        var timeZone = NodaTime.DateTimeZoneProviders.Tzdb[_timeZoneProvider.GetTimeZoneId()];
+        var nowInZone = NodaTime.Instant.FromDateTimeUtc(now).InZone(timeZone);
+        var today = nowInZone.Date;
+
+        var targetMonth = today.PlusMonths(monthOffset);
+        var periodStart = new NodaTime.LocalDate(targetMonth.Year, targetMonth.Month, 1).AtMidnight();
+        var lastDayOfMonth = NodaTime.CalendarSystem.Iso.GetDaysInMonth(targetMonth.Year, targetMonth.Month);
+        var periodEnd = new NodaTime.LocalDate(targetMonth.Year, targetMonth.Month, lastDayOfMonth).At(NodaTime.LocalTime.MaxValue);
+
+        var periodStartInstant = periodStart.InZoneLeniently(timeZone).ToInstant();
+        var periodEndInstant = periodEnd.InZoneLeniently(timeZone).ToInstant();
+
+        var allEvents = await _listUpcomingItems.ExecuteAsync(cancellationToken);
+        var monthEvents = new List<Domain.Entities.Event>();
+
+        foreach (var eventEntity in allEvents)
+        {
+            NodaTime.Instant? eventInstant = null;
+
+            if (eventEntity.Kind == Domain.Enums.EventKind.OneOff && eventEntity.OccursAtUtc.HasValue)
+            {
+                eventInstant = NodaTime.Instant.FromDateTimeUtc(eventEntity.OccursAtUtc.Value.UtcDateTime);
+            }
+            else if (eventEntity.Kind == Domain.Enums.EventKind.Yearly && eventEntity.Month.HasValue && eventEntity.Day.HasValue)
+            {
+                var targetDate = new NodaTime.LocalDate(targetMonth.Year, eventEntity.Month.Value, eventEntity.Day.Value);
+                if (targetDate >= periodStart.Date && targetDate <= periodEnd.Date)
+                {
+                    var localDateTime = eventEntity.IsAllDay
+                        ? targetDate.AtMidnight()
+                        : targetDate.At(eventEntity.TimeOfDay.HasValue ? NodaTime.LocalTime.FromTicksSinceMidnight(eventEntity.TimeOfDay.Value.Ticks) : NodaTime.LocalTime.Midnight);
+                    eventInstant = localDateTime.InZoneLeniently(timeZone).ToInstant();
+                }
+            }
+
+            if (eventInstant.HasValue && eventInstant.Value >= periodStartInstant && eventInstant.Value <= periodEndInstant)
+            {
+                monthEvents.Add(eventEntity);
+            }
+        }
+
+        monthEvents = monthEvents.OrderBy(e =>
+        {
+            if (e.Kind == Domain.Enums.EventKind.OneOff && e.OccursAtUtc.HasValue)
+            {
+                return e.OccursAtUtc.Value.UtcDateTime;
+            }
+
+            var targetDate = new NodaTime.LocalDate(targetMonth.Year, e.Month!.Value, e.Day!.Value);
+            var localDateTime = e.IsAllDay
+                ? targetDate.AtMidnight()
+                : targetDate.At(e.TimeOfDay.HasValue ? NodaTime.LocalTime.FromTicksSinceMidnight(e.TimeOfDay.Value.Ticks) : NodaTime.LocalTime.Midnight);
+            var zonedDateTime = localDateTime.InZoneLeniently(timeZone);
+            var instant = zonedDateTime.ToInstant();
+            return instant.ToDateTimeUtc();
+        }).ToList();
+
+        var eventAttachments = new Dictionary<int, Attachment?>();
+        foreach (var eventEntity in monthEvents)
+        {
+            var currentAttachment = await _attachmentRepository.GetCurrentByEventIdAsync(eventEntity.Id, cancellationToken);
+            eventAttachments[eventEntity.Id] = currentAttachment;
+        }
+
+        var culture = CultureInfo.GetCultureInfo("ru-RU");
+        var monthName = targetMonth.ToString("MMMM yyyy", culture);
+        var text = monthEvents.Count == 0
+            ? $"События в {monthName} отсутствуют"
+            : $"События в {monthName}:\n\n{_eventFormatter.Format(monthEvents, eventAttachments)}";
+
+        var buttons = new List<List<InlineKeyboardButton>>();
+        foreach (var eventEntity in monthEvents)
+        {
+            var currentAttachment = eventAttachments.ContainsKey(eventEntity.Id) ? eventAttachments[eventEntity.Id] : null;
+            var attachmentIndicator = currentAttachment != null ? " 📎" : "";
+            buttons.Add(new List<InlineKeyboardButton>
+            {
+                InlineKeyboardButton.WithCallbackData($"📅 {eventEntity.Title}{attachmentIndicator}", $"event_view:{eventEntity.Id}")
+            });
+        }
+
+        var navigationRow = new List<InlineKeyboardButton>();
+        navigationRow.Add(InlineKeyboardButton.WithCallbackData("◀️ Предыдущий месяц", $"event_view_month:{monthOffset - 1}"));
+        navigationRow.Add(InlineKeyboardButton.WithCallbackData("Следующий месяц ▶️", $"event_view_month:{monthOffset + 1}"));
+        buttons.Add(navigationRow);
+
+        buttons.Add(new List<InlineKeyboardButton>
+        {
+            InlineKeyboardButton.WithCallbackData("🔙 Меню событий", "menu:events")
+        });
+
+        if (messageId.HasValue)
+        {
+            await _botClient.EditMessageText(
+                chatId,
+                messageId.Value,
+                text,
+                replyMarkup: new InlineKeyboardMarkup(buttons),
+                cancellationToken: cancellationToken);
+        }
+        else
+        {
+            await _botClient.SendMessage(
+                chatId,
+                text,
                 replyMarkup: new InlineKeyboardMarkup(buttons),
                 cancellationToken: cancellationToken);
         }

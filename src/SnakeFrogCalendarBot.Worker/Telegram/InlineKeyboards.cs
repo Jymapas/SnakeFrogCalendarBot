@@ -47,6 +47,11 @@ public static class InlineKeyboards
             },
             new[]
             {
+                InlineKeyboardButton.WithCallbackData("📅 На неделю", "event_view_week:0"),
+                InlineKeyboardButton.WithCallbackData("📅 На месяц", "event_view_month:0")
+            },
+            new[]
+            {
                 InlineKeyboardButton.WithCallbackData("✏️ Редактировать", "cmd:event_edit"),
                 InlineKeyboardButton.WithCallbackData("🗑 Удалить", "cmd:event_delete")
             },
