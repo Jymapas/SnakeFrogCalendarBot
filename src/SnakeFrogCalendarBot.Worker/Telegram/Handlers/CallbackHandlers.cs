@@ -269,6 +269,10 @@ public sealed class CallbackHandlers
                 messageText,
                 cancellationToken: cancellationToken);
         }
+        else if (data.StartsWith("event_view:"))
+        {
+            await HandleEventViewAsync(callbackQuery, cancellationToken);
+        }
         else if (data.StartsWith("event_edit:"))
         {
             await HandleEventEditAsync(callbackQuery, cancellationToken);
@@ -318,6 +322,127 @@ public sealed class CallbackHandlers
             callbackQuery.Message!.Chat.Id,
             "Действие отменено",
             cancellationToken: cancellationToken);
+    }
+
+    private async Task HandleEventViewAsync(CallbackQuery callbackQuery, CancellationToken cancellationToken)
+    {
+        var eventIdStr = callbackQuery.Data!.Split(':')[1];
+        if (!int.TryParse(eventIdStr, out var eventId))
+        {
+            await _botClient.AnswerCallbackQuery(
+                callbackQuery.Id,
+                "Ошибка: неверный идентификатор события",
+                cancellationToken: cancellationToken);
+            return;
+        }
+
+        var eventEntity = await _eventRepository.GetByIdAsync(eventId, cancellationToken);
+        if (eventEntity is null)
+        {
+            await _botClient.AnswerCallbackQuery(
+                callbackQuery.Id,
+                "Событие не найдено",
+                cancellationToken: cancellationToken);
+            return;
+        }
+
+        var eventWithAttachment = await _getEventWithAttachment.ExecuteAsync(eventId, cancellationToken);
+        var currentAttachment = eventWithAttachment?.Attachments.FirstOrDefault(a => a.IsCurrent);
+
+        await _botClient.AnswerCallbackQuery(
+            callbackQuery.Id,
+            cancellationToken: cancellationToken);
+
+        var text = FormatEventDetails(eventEntity, currentAttachment);
+        var buttons = new List<List<InlineKeyboardButton>>();
+
+        if (currentAttachment != null)
+        {
+            buttons.Add(new List<InlineKeyboardButton>
+            {
+                InlineKeyboardButton.WithCallbackData($"📎 {currentAttachment.FileName}", $"event_download_file:{eventId}")
+            });
+        }
+
+        buttons.Add(new List<InlineKeyboardButton>
+        {
+            InlineKeyboardButton.WithCallbackData("✏️ Редактировать", $"event_edit:{eventId}")
+        });
+
+        await _botClient.SendMessage(
+            callbackQuery.Message!.Chat.Id,
+            text,
+            replyMarkup: new InlineKeyboardMarkup(buttons),
+            cancellationToken: cancellationToken);
+    }
+
+    private string FormatEventDetails(Domain.Entities.Event eventEntity, Domain.Entities.Attachment? attachment)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine($"📅 {eventEntity.Title}");
+        builder.AppendLine();
+
+        var timeZone = NodaTime.DateTimeZoneProviders.Tzdb[_timeZoneProvider.GetTimeZoneId()];
+        var now = _clock.UtcNow;
+        var nowInZone = NodaTime.Instant.FromDateTimeUtc(now).InZone(timeZone);
+        var today = nowInZone.Date;
+        var culture = CultureInfo.GetCultureInfo("ru-RU");
+
+        if (eventEntity.Kind == Domain.Enums.EventKind.OneOff && eventEntity.OccursAtUtc.HasValue)
+        {
+            var instant = NodaTime.Instant.FromDateTimeUtc(eventEntity.OccursAtUtc.Value.UtcDateTime);
+            var zonedDateTime = instant.InZone(timeZone);
+            var localDateTime = zonedDateTime.LocalDateTime;
+
+            if (eventEntity.IsAllDay)
+            {
+                builder.AppendLine($"📆 Дата: {localDateTime.Date.ToString("d MMMM yyyy", culture)}");
+            }
+            else
+            {
+                builder.AppendLine($"📆 Дата и время: {localDateTime.Date.ToString("d MMMM yyyy", culture)} {localDateTime.TimeOfDay.ToString("HH:mm", culture)}");
+            }
+        }
+        else if (eventEntity.Kind == Domain.Enums.EventKind.Yearly && eventEntity.Month.HasValue && eventEntity.Day.HasValue)
+        {
+            var date = new NodaTime.LocalDate(2000, eventEntity.Month.Value, eventEntity.Day.Value);
+            builder.Append("📆 Дата: ");
+            builder.Append(date.ToString("d MMMM", culture));
+
+            if (!eventEntity.IsAllDay && eventEntity.TimeOfDay.HasValue)
+            {
+                var time = NodaTime.LocalTime.FromTicksSinceMidnight(eventEntity.TimeOfDay.Value.Ticks);
+                builder.Append($" {time.ToString("HH:mm", CultureInfo.InvariantCulture)}");
+            }
+
+            builder.AppendLine(" (ежегодно)");
+        }
+
+        if (!string.IsNullOrWhiteSpace(eventEntity.Description))
+        {
+            builder.AppendLine();
+            builder.AppendLine($"📝 Описание: {eventEntity.Description}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(eventEntity.Place))
+        {
+            builder.AppendLine();
+            builder.AppendLine($"📍 Место: {eventEntity.Place}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(eventEntity.Link))
+        {
+            builder.AppendLine();
+            builder.AppendLine($"🔗 Ссылка: {eventEntity.Link}");
+        }
+
+        if (attachment != null)
+        {
+            builder.AppendLine();
+            builder.AppendLine($"📎 Файл: {attachment.FileName}");
+        }
+
+        return builder.ToString();
     }
 
     private async Task HandleEventEditAsync(CallbackQuery callbackQuery, CancellationToken cancellationToken)
@@ -1248,7 +1373,7 @@ public sealed class CallbackHandlers
             var attachmentIndicator = currentAttachment != null ? " 📎" : "";
             buttons.Add(new List<InlineKeyboardButton>
             {
-                InlineKeyboardButton.WithCallbackData($"📅 {eventEntity.Title}{attachmentIndicator}", $"event_edit:{eventEntity.Id}")
+                InlineKeyboardButton.WithCallbackData($"📅 {eventEntity.Title}{attachmentIndicator}", $"event_view:{eventEntity.Id}")
             });
         }
 
