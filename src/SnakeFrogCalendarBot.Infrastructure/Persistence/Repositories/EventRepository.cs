@@ -135,10 +135,11 @@ public sealed class EventRepository : IEventRepository
         var timeZone = DateTimeZoneProviders.Tzdb[_timeZoneProvider.GetTimeZoneId()];
         var nowInZone = Instant.FromDateTimeUtc(now).InZone(timeZone);
         var today = nowInZone.Date;
+        var todayStartUtc = today.AtStartOfDayInZone(timeZone).ToInstant().ToDateTimeUtc();
 
         var oneOffEvents = await _dbContext.Events
             .AsNoTracking()
-            .Where(e => e.Kind == EventKind.OneOff && e.OccursAtUtc.HasValue && e.OccursAtUtc.Value.UtcDateTime >= today.ToDateTimeUnspecified())
+            .Where(e => e.Kind == EventKind.OneOff && e.OccursAtUtc.HasValue && e.OccursAtUtc.Value.UtcDateTime >= todayStartUtc)
             .ToListAsync(cancellationToken);
 
         var yearlyEvents = await _dbContext.Events
