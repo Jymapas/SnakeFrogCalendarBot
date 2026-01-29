@@ -14,7 +14,15 @@ public sealed class RuDateTimeParser : IDateTimeParser
     private static readonly string[] DateTimeFormats =
     {
         "yyyy-MM-dd HH:mm",
-        "d MMMM yyyy HH:mm"
+        "d MMMM yyyy HH:mm",
+        "dd.MM.yyyy HH:mm",
+        "d.MM.yyyy HH:mm",
+        "dd.M.yyyy HH:mm",
+        "d.M.yyyy HH:mm",
+        "dd.MM.yyyy H:mm",
+        "d.MM.yyyy H:mm",
+        "dd.M.yyyy H:mm",
+        "d.M.yyyy H:mm"
     };
 
     private static readonly string[] DateFormats =
