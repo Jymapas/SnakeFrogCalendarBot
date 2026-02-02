@@ -15,6 +15,11 @@ public static class InlineKeyboards
             },
             new[]
             {
+                InlineKeyboardButton.WithCallbackData("📅 На неделю", "event_view_week:0"),
+                InlineKeyboardButton.WithCallbackData("📅 На месяц", "event_view_month:0")
+            },
+            new[]
+            {
                 InlineKeyboardButton.WithCallbackData("➕ Добавить событие", "cmd:event_add"),
                 InlineKeyboardButton.WithCallbackData("➕ Добавить день рождения", "cmd:birthday_add")
             },
@@ -44,6 +49,11 @@ public static class InlineKeyboards
             {
                 InlineKeyboardButton.WithCallbackData("➕ Добавить событие", "cmd:event_add"),
                 InlineKeyboardButton.WithCallbackData("📋 Список событий", "cmd:event_list")
+            },
+            new[]
+            {
+                InlineKeyboardButton.WithCallbackData("📅 На неделю", "event_view_week:0"),
+                InlineKeyboardButton.WithCallbackData("📅 На месяц", "event_view_month:0")
             },
             new[]
             {
@@ -127,6 +137,62 @@ public static class InlineKeyboards
                 row.Add(InlineKeyboardButton.WithCallbackData(
                     monthNames[i + j], 
                     $"birthday_edit_month:{monthNumber}"));
+            }
+            buttons.Add(row);
+        }
+
+        return new InlineKeyboardMarkup(buttons);
+    }
+
+    public static InlineKeyboardMarkup EventMonthSelectionKeyboardForEdit()
+    {
+        var monthNames = new[]
+        {
+            "Январь", "Февраль", "Март", "Апрель",
+            "Май", "Июнь", "Июль", "Август",
+            "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"
+        };
+
+        var buttons = new List<List<InlineKeyboardButton>>();
+        
+        // Группируем месяцы по 3 в ряд
+        for (int i = 0; i < monthNames.Length; i += 3)
+        {
+            var row = new List<InlineKeyboardButton>();
+            for (int j = 0; j < 3 && i + j < monthNames.Length; j++)
+            {
+                var monthNumber = i + j + 1;
+                row.Add(InlineKeyboardButton.WithCallbackData(
+                    monthNames[i + j], 
+                    $"event_edit_month:{monthNumber}"));
+            }
+            buttons.Add(row);
+        }
+
+        return new InlineKeyboardMarkup(buttons);
+    }
+
+    public static InlineKeyboardMarkup EventMonthSelectionKeyboardForList()
+    {
+        var monthNames = new[]
+        {
+            "Январь", "Февраль", "Март", "Апрель",
+            "Май", "Июнь", "Июль", "Август",
+            "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"
+        };
+
+        var buttons = new List<List<InlineKeyboardButton>>();
+        
+        // Группируем месяцы по 3 в ряд
+        for (int i = 0; i < monthNames.Length; i += 3)
+        {
+            var row = new List<InlineKeyboardButton>();
+            for (int j = 0; j < 3 && i + j < monthNames.Length; j++)
+            {
+                var monthNumber = i + j + 1;
+                row.Add(InlineKeyboardButton.WithCallbackData(
+                    monthNames[i + j], 
+                    $"event_list_month:{monthNumber}"));
             }
             buttons.Add(row);
         }

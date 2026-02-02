@@ -9,6 +9,7 @@ using SnakeFrogCalendarBot.Application.UseCases.Birthdays;
 using SnakeFrogCalendarBot.Application.UseCases.Events;
 using SnakeFrogCalendarBot.Domain.Entities;
 using SnakeFrogCalendarBot.Domain.Enums;
+using SnakeFrogCalendarBot.Worker.Telegram.Handlers;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.ReplyMarkups;
@@ -1486,6 +1487,22 @@ public sealed class MessageHandlers
                     "Выберите месяц:",
                     replyMarkup: InlineKeyboards.MonthSelectionKeyboard(),
                     cancellationToken: cancellationToken);
+                return true;
+
+            case "📅 На неделю":
+                using (var scope = _serviceProvider.CreateScope())
+                {
+                    var callbackHandlers = scope.ServiceProvider.GetRequiredService<CallbackHandlers>();
+                    await callbackHandlers.SendEventViewWeekAsync(message.Chat.Id, 0, null, cancellationToken);
+                }
+                return true;
+
+            case "📅 На месяц":
+                using (var scope = _serviceProvider.CreateScope())
+                {
+                    var callbackHandlers = scope.ServiceProvider.GetRequiredService<CallbackHandlers>();
+                    await callbackHandlers.SendEventViewMonthAsync(message.Chat.Id, 0, null, cancellationToken);
+                }
                 return true;
 
             case "✏️ Редактировать":

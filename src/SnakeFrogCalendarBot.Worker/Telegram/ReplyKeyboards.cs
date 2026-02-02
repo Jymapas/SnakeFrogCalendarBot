@@ -20,6 +20,11 @@ public static class ReplyKeyboards
             },
             new[]
             {
+                new KeyboardButton("📅 На неделю"),
+                new KeyboardButton("📅 На месяц")
+            },
+            new[]
+            {
                 new KeyboardButton("✏️ Редактировать"),
                 new KeyboardButton("🗑 Удалить")
             },
