@@ -160,7 +160,8 @@ public sealed class CallbackHandlers
 
         if (data.StartsWith("event_download_file:"))
         {
-            var eventIdStr = data.Contains(':') ? data.Split(':')[1] : null;
+            var parts = data.Split(':', StringSplitOptions.RemoveEmptyEntries);
+            var eventIdStr = parts.Length > 1 ? parts[1] : null;
             if (!int.TryParse(eventIdStr, out var eventId))
             {
                 await _botClient.AnswerCallbackQuery(
@@ -168,6 +169,12 @@ public sealed class CallbackHandlers
                     "Ошибка: неверный идентификатор события",
                     cancellationToken: cancellationToken);
                 return;
+            }
+
+            int? attachmentId = null;
+            if (parts.Length > 2 && int.TryParse(parts[2], out var parsedAttachmentId))
+            {
+                attachmentId = parsedAttachmentId;
             }
 
             var eventWithAttachment = await _getEventWithAttachment.ExecuteAsync(eventId, cancellationToken);
@@ -180,8 +187,30 @@ public sealed class CallbackHandlers
                 return;
             }
 
-            var currentAttachment = eventWithAttachment.Attachments.FirstOrDefault(a => a.IsCurrent);
-            if (currentAttachment is null)
+            IReadOnlyList<Domain.Entities.Attachment> attachmentsToSend;
+            if (attachmentId.HasValue)
+            {
+                var attachment = eventWithAttachment.Attachments.FirstOrDefault(a => a.Id == attachmentId.Value);
+                if (attachment is null)
+                {
+                    await _botClient.AnswerCallbackQuery(
+                        callbackQuery.Id,
+                        "Файл не найден",
+                        cancellationToken: cancellationToken);
+                    return;
+                }
+
+                attachmentsToSend = new[] { attachment };
+            }
+            else
+            {
+                var currentAttachments = eventWithAttachment.Attachments.Where(a => a.IsCurrent).ToList();
+                attachmentsToSend = currentAttachments.Count > 0
+                    ? currentAttachments
+                    : eventWithAttachment.Attachments.ToList();
+            }
+
+            if (attachmentsToSend.Count == 0)
             {
                 await _botClient.AnswerCallbackQuery(
                     callbackQuery.Id,
@@ -194,32 +223,38 @@ public sealed class CallbackHandlers
                 callbackQuery.Id,
                 cancellationToken: cancellationToken);
 
-            try
+            var chatId = callbackQuery.Message!.Chat.Id;
+            var url = $"https://api.telegram.org/bot{_botToken}/sendDocument";
+            var failedFiles = new List<string>();
+
+            foreach (var attachment in attachmentsToSend)
             {
-                var chatId = callbackQuery.Message!.Chat.Id;
-                var url = $"https://api.telegram.org/bot{_botToken}/sendDocument";
-                
-                var formData = new MultipartFormDataContent();
-                formData.Add(new StringContent(chatId.ToString()), "chat_id");
-                formData.Add(new StringContent(currentAttachment.TelegramFileId), "document");
-                formData.Add(new StringContent($"Файл: {currentAttachment.FileName}"), "caption");
-                
-                var response = await _httpClient.PostAsync(url, formData, cancellationToken);
-                var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
-                
-                if (!response.IsSuccessStatusCode)
+                try
                 {
-                    await _botClient.SendMessage(
-                        callbackQuery.Message!.Chat.Id,
-                        $"Ошибка при отправке файла: {responseContent}",
-                        cancellationToken: cancellationToken);
+                    using var formData = new MultipartFormDataContent();
+                    formData.Add(new StringContent(chatId.ToString()), "chat_id");
+                    formData.Add(new StringContent(attachment.TelegramFileId), "document");
+                    formData.Add(new StringContent($"Файл: {attachment.FileName}"), "caption");
+
+                    var response = await _httpClient.PostAsync(url, formData, cancellationToken);
+                    var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
+
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        failedFiles.Add($"{attachment.FileName} ({responseContent})");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    failedFiles.Add($"{attachment.FileName} ({ex.Message})");
                 }
             }
-            catch (Exception ex)
+
+            if (failedFiles.Count > 0)
             {
                 await _botClient.SendMessage(
                     callbackQuery.Message!.Chat.Id,
-                    $"Ошибка: {ex.Message}",
+                    $"Ошибка при отправке файлов:\n{string.Join("\n", failedFiles)}",
                     cancellationToken: cancellationToken);
             }
         }
@@ -359,21 +394,34 @@ public sealed class CallbackHandlers
         }
 
         var eventWithAttachment = await _getEventWithAttachment.ExecuteAsync(eventId, cancellationToken);
-        var currentAttachment = eventWithAttachment?.Attachments.FirstOrDefault(a => a.IsCurrent);
+        var attachments = eventWithAttachment?.Attachments.ToList() ?? new List<Domain.Entities.Attachment>();
+        var currentAttachments = attachments.Where(a => a.IsCurrent).ToList();
+        var attachmentsForDisplay = currentAttachments.Count > 0 ? currentAttachments : attachments;
 
         await _botClient.AnswerCallbackQuery(
             callbackQuery.Id,
             cancellationToken: cancellationToken);
 
-        var text = FormatEventDetails(eventEntity, currentAttachment);
+        var text = FormatEventDetails(eventEntity, attachmentsForDisplay);
         var buttons = new List<List<InlineKeyboardButton>>();
 
-        if (currentAttachment != null)
+        if (attachmentsForDisplay.Count > 0)
         {
-            buttons.Add(new List<InlineKeyboardButton>
+            if (attachmentsForDisplay.Count > 1)
             {
-                InlineKeyboardButton.WithCallbackData($"📎 {currentAttachment.FileName}", $"event_download_file:{eventId}")
-            });
+                buttons.Add(new List<InlineKeyboardButton>
+                {
+                    InlineKeyboardButton.WithCallbackData($"📥 Скачать все файлы ({attachmentsForDisplay.Count})", $"event_download_file:{eventId}")
+                });
+            }
+
+            foreach (var attachment in attachmentsForDisplay)
+            {
+                buttons.Add(new List<InlineKeyboardButton>
+                {
+                    InlineKeyboardButton.WithCallbackData($"📎 {attachment.FileName}", $"event_download_file:{eventId}:{attachment.Id}")
+                });
+            }
         }
 
         buttons.Add(new List<InlineKeyboardButton>
@@ -388,7 +436,7 @@ public sealed class CallbackHandlers
             cancellationToken: cancellationToken);
     }
 
-    private string FormatEventDetails(Domain.Entities.Event eventEntity, Domain.Entities.Attachment? attachment)
+    private string FormatEventDetails(Domain.Entities.Event eventEntity, IReadOnlyList<Domain.Entities.Attachment> attachments)
     {
         var builder = new StringBuilder();
         builder.AppendLine($"📅 {eventEntity.Title}");
@@ -448,10 +496,19 @@ public sealed class CallbackHandlers
             builder.AppendLine($"🔗 Ссылка: {eventEntity.Link}");
         }
 
-        if (attachment != null)
+        if (attachments.Count == 1)
         {
             builder.AppendLine();
-            builder.AppendLine($"📎 Файл: {attachment.FileName}");
+            builder.AppendLine($"📎 Файл: {attachments[0].FileName}");
+        }
+        else if (attachments.Count > 1)
+        {
+            builder.AppendLine();
+            builder.AppendLine("📎 Файлы:");
+            foreach (var attachment in attachments)
+            {
+                builder.AppendLine($"- {attachment.FileName}");
+            }
         }
 
         return builder.ToString();
