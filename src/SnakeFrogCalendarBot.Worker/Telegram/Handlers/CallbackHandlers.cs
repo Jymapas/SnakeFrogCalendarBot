@@ -158,6 +158,57 @@ public sealed class CallbackHandlers
             return;
         }
 
+        if (data.StartsWith("event_attach_done:"))
+        {
+            var eventIdStr = data.Split(':', StringSplitOptions.RemoveEmptyEntries).ElementAtOrDefault(1);
+            if (!int.TryParse(eventIdStr, out var eventId))
+            {
+                await _botClient.AnswerCallbackQuery(
+                    callbackQuery.Id,
+                    "Ошибка: неверный идентификатор события",
+                    cancellationToken: cancellationToken);
+                return;
+            }
+
+            var state = await _conversationRepository.GetByUserIdAsync(userId, cancellationToken);
+            if (state is null || !string.Equals(state.ConversationName, ConversationNames.WaitingForEventFile, StringComparison.OrdinalIgnoreCase))
+            {
+                await _botClient.AnswerCallbackQuery(
+                    callbackQuery.Id,
+                    "Нет активного добавления файлов",
+                    cancellationToken: cancellationToken);
+                return;
+            }
+
+            if (state.Step.StartsWith("replace:", StringComparison.OrdinalIgnoreCase))
+            {
+                await _botClient.AnswerCallbackQuery(
+                    callbackQuery.Id,
+                    "Сейчас активна замена файла. Отправьте файл или /cancel",
+                    cancellationToken: cancellationToken);
+                return;
+            }
+
+            if (!string.Equals(state.Step, eventId.ToString(), StringComparison.Ordinal))
+            {
+                await _botClient.AnswerCallbackQuery(
+                    callbackQuery.Id,
+                    "Добавление файлов уже переключено на другое событие",
+                    cancellationToken: cancellationToken);
+                return;
+            }
+
+            await _conversationRepository.DeleteAsync(userId, cancellationToken);
+            await _botClient.AnswerCallbackQuery(
+                callbackQuery.Id,
+                cancellationToken: cancellationToken);
+            await _botClient.SendMessage(
+                callbackQuery.Message!.Chat.Id,
+                "Готово. Все файлы прикреплены.",
+                cancellationToken: cancellationToken);
+            return;
+        }
+
         if (data.StartsWith("event_download_file:"))
         {
             var parts = data.Split(':', StringSplitOptions.RemoveEmptyEntries);
@@ -308,12 +359,25 @@ public sealed class CallbackHandlers
             var messageText = isReplace
                 ? "Отправьте файл для замены последнего прикрепленного файла"
                 : eventWithAttachment.Attachments.Count > 0
-                    ? $"Отправьте файл для добавления к событию (уже прикреплено файлов: {eventWithAttachment.Attachments.Count})"
-                    : "Отправьте файл, который нужно прикрепить к событию";
+                    ? $"Отправьте файл для добавления к событию (уже прикреплено файлов: {eventWithAttachment.Attachments.Count}). Можно отправить несколько, затем нажмите «Готово»."
+                    : "Отправьте файл, который нужно прикрепить к событию. Можно отправить несколько, затем нажмите «Готово».";
 
             await _botClient.SendMessage(
                 callbackQuery.Message!.Chat.Id,
                 messageText,
+                replyMarkup: isReplace
+                    ? new InlineKeyboardMarkup(new[]
+                    {
+                        new[] { InlineKeyboardButton.WithCallbackData("❌ Отмена", "cancel") }
+                    })
+                    : new InlineKeyboardMarkup(new[]
+                    {
+                        new[]
+                        {
+                            InlineKeyboardButton.WithCallbackData("✅ Готово", $"event_attach_done:{eventId}"),
+                            InlineKeyboardButton.WithCallbackData("❌ Отмена", "cancel")
+                        }
+                    }),
                 cancellationToken: cancellationToken);
         }
         else if (data.StartsWith("event_view:"))

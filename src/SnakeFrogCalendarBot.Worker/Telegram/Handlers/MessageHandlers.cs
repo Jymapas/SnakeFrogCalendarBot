@@ -159,6 +159,22 @@ public sealed class MessageHandlers
             return;
         }
 
+        if (!isReplace && !string.IsNullOrWhiteSpace(message.Text))
+        {
+            var text = message.Text.Trim();
+            if (string.Equals(text, "готово", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(text, "done", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(text, "✅ Готово", StringComparison.OrdinalIgnoreCase))
+            {
+                await _conversationRepository.DeleteAsync(state.UserId, cancellationToken);
+                await _botClient.SendMessage(
+                    message.Chat.Id,
+                    "Готово. Все файлы прикреплены.",
+                    cancellationToken: cancellationToken);
+                return;
+            }
+        }
+
         string? fileId = null;
         string? fileUniqueId = null;
         string? fileName = null;
@@ -202,7 +218,22 @@ public sealed class MessageHandlers
         {
             await _botClient.SendMessage(
                 message.Chat.Id,
-                "Пожалуйста, отправьте файл",
+                isReplace
+                    ? "Пожалуйста, отправьте файл"
+                    : "Пожалуйста, отправьте файл или нажмите «Готово»",
+                replyMarkup: isReplace
+                    ? new InlineKeyboardMarkup(new[]
+                    {
+                        new[] { InlineKeyboardButton.WithCallbackData("❌ Отмена", "cancel") }
+                    })
+                    : new InlineKeyboardMarkup(new[]
+                    {
+                        new[]
+                        {
+                            InlineKeyboardButton.WithCallbackData("✅ Готово", $"event_attach_done:{eventId}"),
+                            InlineKeyboardButton.WithCallbackData("❌ Отмена", "cancel")
+                        }
+                    }),
                 cancellationToken: cancellationToken);
             return;
         }
@@ -238,11 +269,20 @@ public sealed class MessageHandlers
                     size);
 
                 await _attachFileToEvent.ExecuteAsync(attachCommand, cancellationToken);
-                await _conversationRepository.DeleteAsync(state.UserId, cancellationToken);
+                state.Update(state.Step, state.StateJson, _clock.UtcNow);
+                await _conversationRepository.UpsertAsync(state, cancellationToken);
 
                 await _botClient.SendMessage(
                     message.Chat.Id,
-                    "Файл успешно прикреплён",
+                    "Файл успешно прикреплён. Отправьте ещё или нажмите «Готово».",
+                    replyMarkup: new InlineKeyboardMarkup(new[]
+                    {
+                        new[]
+                        {
+                            InlineKeyboardButton.WithCallbackData("✅ Готово", $"event_attach_done:{eventId}"),
+                            InlineKeyboardButton.WithCallbackData("❌ Отмена", "cancel")
+                        }
+                    }),
                     cancellationToken: cancellationToken);
             }
         }
