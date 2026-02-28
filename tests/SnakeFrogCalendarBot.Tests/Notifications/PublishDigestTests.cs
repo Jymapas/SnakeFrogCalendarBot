@@ -8,6 +8,7 @@ using SnakeFrogCalendarBot.Application.Formatting;
 using SnakeFrogCalendarBot.Application.UseCases.Notifications;
 using SnakeFrogCalendarBot.Domain.Entities;
 using SnakeFrogCalendarBot.Domain.Enums;
+using AppClock = SnakeFrogCalendarBot.Application.Abstractions.Time.IClock;
 
 namespace SnakeFrogCalendarBot.Tests.Notifications;
 
@@ -81,7 +82,7 @@ public sealed class PublishDigestTests
             NullLogger<PublishDigest>.Instance);
     }
 
-    private sealed class TestClock : IClock
+    private sealed class TestClock : AppClock
     {
         public TestClock(DateTime utcNow)
         {
