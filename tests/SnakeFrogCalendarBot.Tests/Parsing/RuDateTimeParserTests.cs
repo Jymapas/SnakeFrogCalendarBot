@@ -109,7 +109,7 @@ public sealed class RuDateTimeParserTests
     [Test]
     public void TryParse_WithRussianDateWithoutYear_ReturnsNextOccurrence()
     {
-        var clock = new TestClock(new DateTime(2026, 1, 15, 10, 0, 0, DateTimeKind.Utc));
+        var clock = new TestClock(new DateTime(2026, 1, 5, 10, 0, 0, DateTimeKind.Utc));
         var timeZoneProvider = new TestTimeZoneProvider();
         var parser = new RuDateTimeParser(clock, timeZoneProvider);
 
