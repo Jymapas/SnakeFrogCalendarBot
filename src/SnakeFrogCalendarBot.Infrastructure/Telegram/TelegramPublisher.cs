@@ -10,15 +10,18 @@ public sealed class TelegramPublisher : ITelegramPublisher
 {
     private readonly ITelegramBotClient _botClient;
     private readonly string _targetChat;
+    private readonly IPinnedMessageCleanupRegistry _cleanupRegistry;
     private readonly ILogger<TelegramPublisher> _logger;
 
     public TelegramPublisher(
         ITelegramBotClient botClient,
         string targetChat,
+        IPinnedMessageCleanupRegistry cleanupRegistry,
         ILogger<TelegramPublisher> logger)
     {
         _botClient = botClient;
         _targetChat = targetChat;
+        _cleanupRegistry = cleanupRegistry;
         _logger = logger;
     }
 
@@ -72,6 +75,21 @@ public sealed class TelegramPublisher : ITelegramPublisher
         }
     }
 
+    public async Task DeleteMessageAsync(int messageId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var chatId = new ChatId(_targetChat);
+            await _botClient.DeleteMessage(chatId, messageId, cancellationToken);
+            _logger.LogInformation("Message {MessageId} deleted in {TargetChat}", messageId, _targetChat);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to delete message {MessageId} in {TargetChat}", messageId, _targetChat);
+            throw;
+        }
+    }
+
     public async Task PinMessageAsync(int messageId, bool disableNotification, CancellationToken cancellationToken)
     {
         try
@@ -87,6 +105,7 @@ public sealed class TelegramPublisher : ITelegramPublisher
                 messageId,
                 _targetChat,
                 disableNotification);
+            _cleanupRegistry.RegisterPinnedMessage(messageId);
         }
         catch (Exception ex)
         {
