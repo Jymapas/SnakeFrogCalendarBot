@@ -130,6 +130,11 @@ public sealed class RefreshLatestDigestPostsTests
             throw new NotSupportedException();
         }
 
+        public Task<LatestDigestPostInfo?> GetByDigestTypeAsync(DigestType digestType, CancellationToken cancellationToken)
+        {
+            return Task.FromResult(_latestPosts.FirstOrDefault(post => post.DigestType == digestType));
+        }
+
         public Task<IReadOnlyList<LatestDigestPostInfo>> ListAsync(CancellationToken cancellationToken)
         {
             return Task.FromResult(_latestPosts);
@@ -213,6 +218,16 @@ public sealed class RefreshLatestDigestPostsTests
             EditedMessageIds.Add(messageId);
             EditedTexts.Add(text);
             return Task.CompletedTask;
+        }
+
+        public Task PinMessageAsync(int messageId, bool disableNotification, CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task UnpinMessageAsync(int messageId, CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
         }
     }
 }
