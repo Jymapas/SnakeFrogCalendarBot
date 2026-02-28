@@ -401,7 +401,7 @@ public sealed class CommandHandlers
 
             if (hasFile)
             {
-                row.Add(InlineKeyboardButton.WithCallbackData("📥 Скачать файл", $"event_download_file:{eventEntity.Id}"));
+                row.Add(InlineKeyboardButton.WithCallbackData("📥 Скачать файлы", $"event_download_file:{eventEntity.Id}"));
                 row.Add(InlineKeyboardButton.WithCallbackData("♻️ Заменить файл", $"event_replace_file:{eventEntity.Id}"));
             }
 
