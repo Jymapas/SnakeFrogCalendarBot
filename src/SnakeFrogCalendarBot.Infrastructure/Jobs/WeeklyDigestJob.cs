@@ -16,6 +16,7 @@ public sealed class WeeklyDigestJob : IJob
     private readonly SendDigest _sendDigest;
     private readonly DigestFormatter _formatter;
     private readonly INotificationRunRepository _notificationRunRepository;
+    private readonly ILatestDigestPostRepository _latestDigestPostRepository;
     private readonly IClock _clock;
     private readonly ITimeZoneProvider _timeZoneProvider;
     private readonly ILogger<WeeklyDigestJob> _logger;
@@ -25,6 +26,7 @@ public sealed class WeeklyDigestJob : IJob
         SendDigest sendDigest,
         DigestFormatter formatter,
         INotificationRunRepository notificationRunRepository,
+        ILatestDigestPostRepository latestDigestPostRepository,
         IClock clock,
         ITimeZoneProvider timeZoneProvider,
         ILogger<WeeklyDigestJob> logger)
@@ -33,6 +35,7 @@ public sealed class WeeklyDigestJob : IJob
         _sendDigest = sendDigest;
         _formatter = formatter;
         _notificationRunRepository = notificationRunRepository;
+        _latestDigestPostRepository = latestDigestPostRepository;
         _clock = clock;
         _timeZoneProvider = timeZoneProvider;
         _logger = logger;
@@ -63,7 +66,7 @@ public sealed class WeeklyDigestJob : IJob
             }
 
             var digestText = _formatter.FormatWeekly(result.PeriodStart, result.PeriodEnd, result.Items);
-            await _sendDigest.ExecuteAsync(digestText, context.CancellationToken);
+            var messageId = await _sendDigest.ExecuteAsync(digestText, context.CancellationToken);
 
             var notificationRun = new NotificationRun(
                 DigestType.Weekly,
@@ -73,6 +76,12 @@ public sealed class WeeklyDigestJob : IJob
                 _clock.UtcNow);
 
             await _notificationRunRepository.AddAsync(notificationRun, context.CancellationToken);
+            await _latestDigestPostRepository.UpsertAsync(
+                DigestType.Weekly,
+                notificationRun.Id,
+                messageId,
+                _clock.UtcNow,
+                context.CancellationToken);
             _logger.LogInformation("Weekly digest for {Start}-{End} sent successfully", result.PeriodStart, result.PeriodEnd);
         }
         catch (Exception ex)
