@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using NodaTime;
 using SnakeFrogCalendarBot.Application.Abstractions.Persistence;
+using SnakeFrogCalendarBot.Application.Abstractions.Telegram;
 using SnakeFrogCalendarBot.Application.Abstractions.Time;
 using SnakeFrogCalendarBot.Application.Formatting;
 using SnakeFrogCalendarBot.Domain.Entities;
@@ -16,6 +17,7 @@ public sealed class PublishDigest
     private readonly SendDigest _sendDigest;
     private readonly INotificationRunRepository _notificationRunRepository;
     private readonly ILatestDigestPostRepository _latestDigestPostRepository;
+    private readonly ITelegramPublisher _telegramPublisher;
     private readonly DigestPeriodCalculator _digestPeriodCalculator;
     private readonly AppClock _clock;
     private readonly ITimeZoneProvider _timeZoneProvider;
@@ -27,6 +29,7 @@ public sealed class PublishDigest
         SendDigest sendDigest,
         INotificationRunRepository notificationRunRepository,
         ILatestDigestPostRepository latestDigestPostRepository,
+        ITelegramPublisher telegramPublisher,
         DigestPeriodCalculator digestPeriodCalculator,
         AppClock clock,
         ITimeZoneProvider timeZoneProvider,
@@ -37,6 +40,7 @@ public sealed class PublishDigest
         _sendDigest = sendDigest;
         _notificationRunRepository = notificationRunRepository;
         _latestDigestPostRepository = latestDigestPostRepository;
+        _telegramPublisher = telegramPublisher;
         _digestPeriodCalculator = digestPeriodCalculator;
         _clock = clock;
         _timeZoneProvider = timeZoneProvider;
@@ -88,6 +92,10 @@ public sealed class PublishDigest
             return false;
         }
 
+        var previousLatestPost = digestType == DigestType.Monthly
+            ? await _latestDigestPostRepository.GetByDigestTypeAsync(DigestType.Monthly, cancellationToken)
+            : null;
+
         var items = await _digestItemsProvider.BuildAsync(periodStart, periodEnd, timeZoneId, cancellationToken);
         var digestText = digestType switch
         {
@@ -115,6 +123,11 @@ public sealed class PublishDigest
             now,
             cancellationToken);
 
+        if (digestType == DigestType.Monthly)
+        {
+            await TryUpdateMonthlyPinAsync(previousLatestPost?.TelegramMessageId, messageId, cancellationToken);
+        }
+
         _logger.LogInformation(
             "{DigestType} digest for {Start}-{End} sent successfully",
             digestType,
@@ -122,5 +135,38 @@ public sealed class PublishDigest
             periodEnd);
 
         return true;
+    }
+
+    private async Task TryUpdateMonthlyPinAsync(
+        int? previousMessageId,
+        int newMessageId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _telegramPublisher.PinMessageAsync(newMessageId, disableNotification: true, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to pin latest monthly digest message {MessageId}", newMessageId);
+            return;
+        }
+
+        if (!previousMessageId.HasValue || previousMessageId.Value == newMessageId)
+        {
+            return;
+        }
+
+        try
+        {
+            await _telegramPublisher.UnpinMessageAsync(previousMessageId.Value, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Failed to unpin previous monthly digest message {MessageId}",
+                previousMessageId.Value);
+        }
     }
 }
