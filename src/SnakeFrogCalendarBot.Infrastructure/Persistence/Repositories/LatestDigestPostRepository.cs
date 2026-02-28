@@ -42,6 +42,22 @@ public sealed class LatestDigestPostRepository : ILatestDigestPostRepository
         await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task<LatestDigestPostInfo?> GetByDigestTypeAsync(DigestType digestType, CancellationToken cancellationToken)
+    {
+        return await (
+                from post in _dbContext.LatestDigestPosts.AsNoTracking()
+                join run in _dbContext.NotificationRuns.AsNoTracking()
+                    on post.NotificationRunId equals run.Id
+                where post.DigestType == digestType
+                select new LatestDigestPostInfo(
+                    post.DigestType,
+                    post.TelegramMessageId,
+                    run.PeriodStartLocal,
+                    run.PeriodEndLocal,
+                    run.TimeZoneId))
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
     public async Task<IReadOnlyList<LatestDigestPostInfo>> ListAsync(CancellationToken cancellationToken)
     {
         return await (

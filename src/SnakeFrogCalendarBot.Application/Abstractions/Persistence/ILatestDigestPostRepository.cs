@@ -12,5 +12,6 @@ public interface ILatestDigestPostRepository
         DateTime updatedAtUtc,
         CancellationToken cancellationToken);
 
+    Task<LatestDigestPostInfo?> GetByDigestTypeAsync(DigestType digestType, CancellationToken cancellationToken);
     Task<IReadOnlyList<LatestDigestPostInfo>> ListAsync(CancellationToken cancellationToken);
 }
