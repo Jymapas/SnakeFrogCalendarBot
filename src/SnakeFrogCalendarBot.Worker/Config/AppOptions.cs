@@ -5,11 +5,14 @@ namespace SnakeFrogCalendarBot.Worker.Config;
 
 public sealed class AppOptions
 {
+    private static readonly TimeSpan DefaultTelegramChannelTriggerWindow = TimeSpan.FromHours(3);
+
     public string TelegramBotToken { get; init; } = string.Empty;
     public IReadOnlyList<long> AllowedUserIds { get; init; } = Array.Empty<long>();
     public string TelegramTargetChat { get; init; } = string.Empty;
     public string TimeZone { get; init; } = string.Empty;
     public string PostgresConnectionString { get; init; } = string.Empty;
+    public TimeSpan TelegramChannelTriggerWindow { get; init; } = DefaultTelegramChannelTriggerWindow;
 
     public static AppOptions FromConfiguration(IConfiguration configuration)
     {
@@ -22,6 +25,7 @@ public sealed class AppOptions
         var dbName = configuration["POSTGRES_DB"]?.Trim();
         var dbUser = configuration["POSTGRES_USER"]?.Trim();
         var dbPassword = configuration["POSTGRES_PASSWORD"]?.Trim();
+        var triggerWindowRaw = configuration["TELEGRAM_CHANNEL_TRIGGER_WINDOW_MINUTES"]?.Trim();
 
         if (string.IsNullOrWhiteSpace(token))
         {
@@ -104,13 +108,27 @@ public sealed class AppOptions
             ? $"Host={dbHost};Port={port};Database={dbName};Username={dbUser}"
             : $"Host={dbHost};Port={port};Database={dbName};Username={dbUser};Password={dbPassword}";
 
+        var triggerWindow = DefaultTelegramChannelTriggerWindow;
+        if (!string.IsNullOrWhiteSpace(triggerWindowRaw))
+        {
+            if (!int.TryParse(triggerWindowRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var minutes)
+                || minutes <= 0)
+            {
+                throw new InvalidOperationException(
+                    "TELEGRAM_CHANNEL_TRIGGER_WINDOW_MINUTES must be a positive integer when provided.");
+            }
+
+            triggerWindow = TimeSpan.FromMinutes(minutes);
+        }
+
         return new AppOptions
         {
             TelegramBotToken = token,
             AllowedUserIds = allowedIds,
             TelegramTargetChat = targetChat,
             TimeZone = timeZone,
-            PostgresConnectionString = connectionString
+            PostgresConnectionString = connectionString,
+            TelegramChannelTriggerWindow = triggerWindow
         };
     }
 
