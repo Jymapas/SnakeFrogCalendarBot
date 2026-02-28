@@ -71,4 +71,38 @@ public sealed class TelegramPublisher : ITelegramPublisher
             throw;
         }
     }
+
+    public async Task PinMessageAsync(int messageId, bool disableNotification, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var chatId = new ChatId(_targetChat);
+            await _botClient.PinChatMessage(chatId, messageId, disableNotification, cancellationToken);
+            _logger.LogInformation(
+                "Message {MessageId} pinned in {TargetChat} with disableNotification={DisableNotification}",
+                messageId,
+                _targetChat,
+                disableNotification);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to pin message {MessageId} in {TargetChat}", messageId, _targetChat);
+            throw;
+        }
+    }
+
+    public async Task UnpinMessageAsync(int messageId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var chatId = new ChatId(_targetChat);
+            await _botClient.UnpinChatMessage(chatId, messageId, cancellationToken);
+            _logger.LogInformation("Message {MessageId} unpinned in {TargetChat}", messageId, _targetChat);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to unpin message {MessageId} in {TargetChat}", messageId, _targetChat);
+            throw;
+        }
+    }
 }
