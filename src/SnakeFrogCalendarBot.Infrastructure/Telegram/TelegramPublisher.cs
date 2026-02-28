@@ -22,13 +22,14 @@ public sealed class TelegramPublisher : ITelegramPublisher
         _logger = logger;
     }
 
-    public async Task SendMessageAsync(string text, CancellationToken cancellationToken)
+    public async Task<int> SendMessageAsync(string text, CancellationToken cancellationToken)
     {
         try
         {
             var chatId = new ChatId(_targetChat);
-            await _botClient.SendMessage(chatId, text, cancellationToken: cancellationToken);
+            var message = await _botClient.SendMessage(chatId, text, cancellationToken: cancellationToken);
             _logger.LogInformation("Message sent to {TargetChat}", _targetChat);
+            return message.MessageId;
         }
         catch (Exception ex)
         {
@@ -46,6 +47,27 @@ public sealed class TelegramPublisher : ITelegramPublisher
             {
                 _logger.LogError(ex, "Failed to send message to {TargetChat}", _targetChat);
             }
+            throw;
+        }
+    }
+
+    public async Task EditMessageAsync(int messageId, string text, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var chatId = new ChatId(_targetChat);
+            await _botClient.EditMessageText(chatId, messageId, text, cancellationToken: cancellationToken);
+            _logger.LogInformation("Message {MessageId} edited in {TargetChat}", messageId, _targetChat);
+        }
+        catch (Exception ex)
+        {
+            if (ex.Message.Contains("message is not modified", StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogDebug("Message {MessageId} in {TargetChat} is already up to date", messageId, _targetChat);
+                return;
+            }
+
+            _logger.LogError(ex, "Failed to edit message {MessageId} in {TargetChat}", messageId, _targetChat);
             throw;
         }
     }
