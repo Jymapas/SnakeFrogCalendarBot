@@ -193,6 +193,11 @@ public sealed class PublishDigestTests
             throw new NotSupportedException();
         }
 
+        public Task DeleteMessageAsync(int messageId, CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
+
         public Task PinMessageAsync(int messageId, bool disableNotification, CancellationToken cancellationToken)
         {
             PinnedMessages.Add((messageId, disableNotification));

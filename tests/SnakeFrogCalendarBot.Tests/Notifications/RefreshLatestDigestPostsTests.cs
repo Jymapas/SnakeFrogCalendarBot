@@ -220,6 +220,11 @@ public sealed class RefreshLatestDigestPostsTests
             return Task.CompletedTask;
         }
 
+        public Task DeleteMessageAsync(int messageId, CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
+
         public Task PinMessageAsync(int messageId, bool disableNotification, CancellationToken cancellationToken)
         {
             throw new NotSupportedException();
