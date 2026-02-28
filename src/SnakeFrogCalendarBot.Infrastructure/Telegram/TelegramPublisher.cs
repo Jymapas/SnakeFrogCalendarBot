@@ -77,7 +77,11 @@ public sealed class TelegramPublisher : ITelegramPublisher
         try
         {
             var chatId = new ChatId(_targetChat);
-            await _botClient.PinChatMessage(chatId, messageId, disableNotification, cancellationToken);
+            await _botClient.PinChatMessage(
+                chatId,
+                messageId,
+                disableNotification: disableNotification,
+                cancellationToken: cancellationToken);
             _logger.LogInformation(
                 "Message {MessageId} pinned in {TargetChat} with disableNotification={DisableNotification}",
                 messageId,
@@ -96,7 +100,10 @@ public sealed class TelegramPublisher : ITelegramPublisher
         try
         {
             var chatId = new ChatId(_targetChat);
-            await _botClient.UnpinChatMessage(chatId, messageId, cancellationToken);
+            await _botClient.UnpinChatMessage(
+                chatId,
+                messageId,
+                cancellationToken: cancellationToken);
             _logger.LogInformation("Message {MessageId} unpinned in {TargetChat}", messageId, _targetChat);
         }
         catch (Exception ex)
