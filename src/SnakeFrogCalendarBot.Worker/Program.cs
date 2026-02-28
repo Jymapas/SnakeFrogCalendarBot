@@ -166,9 +166,13 @@ try
             services.AddScoped<BuildDailyDigest>();
             services.AddScoped<BuildWeeklyDigest>();
             services.AddScoped<BuildMonthlyDigest>();
+            services.AddSingleton<DigestPeriodCalculator>();
+            services.AddSingleton<DigestCatchUpPlanner>();
             services.AddScoped<DigestItemsProvider>();
+            services.AddScoped<PublishDigest>();
             services.AddScoped<RefreshLatestDigestPosts>();
             services.AddScoped<SendDigest>();
+            services.AddScoped<DigestCatchUpPublisher>();
 
             services.AddQuartz(q =>
             {
