@@ -8,15 +8,18 @@ namespace SnakeFrogCalendarBot.Application.UseCases.Notifications;
 public sealed class BuildWeeklyDigest
 {
     private readonly DigestItemsProvider _digestItemsProvider;
+    private readonly DigestPeriodCalculator _digestPeriodCalculator;
     private readonly AppClock _clock;
     private readonly ITimeZoneProvider _timeZoneProvider;
 
     public BuildWeeklyDigest(
         DigestItemsProvider digestItemsProvider,
+        DigestPeriodCalculator digestPeriodCalculator,
         AppClock clock,
         ITimeZoneProvider timeZoneProvider)
     {
         _digestItemsProvider = digestItemsProvider;
+        _digestPeriodCalculator = digestPeriodCalculator;
         _clock = clock;
         _timeZoneProvider = timeZoneProvider;
     }
@@ -28,11 +31,7 @@ public sealed class BuildWeeklyDigest
         var nowInZone = Instant.FromDateTimeUtc(now).InZone(timeZone);
         var today = nowInZone.Date;
 
-        var daysUntilMonday = ((int)IsoDayOfWeek.Monday - (int)today.DayOfWeek + 7) % 7;
-        var nextMonday = daysUntilMonday == 0 ? today.PlusDays(7) : today.PlusDays(daysUntilMonday);
-
-        var periodStart = nextMonday;
-        var periodEnd = nextMonday.PlusDays(6);
+        var (periodStart, periodEnd) = _digestPeriodCalculator.CalculateWeeklyPeriod(today);
 
         var items = await _digestItemsProvider.BuildAsync(periodStart, periodEnd, timeZone.Id, cancellationToken);
 

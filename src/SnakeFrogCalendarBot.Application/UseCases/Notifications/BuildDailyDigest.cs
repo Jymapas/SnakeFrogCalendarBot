@@ -8,15 +8,18 @@ namespace SnakeFrogCalendarBot.Application.UseCases.Notifications;
 public sealed class BuildDailyDigest
 {
     private readonly DigestItemsProvider _digestItemsProvider;
+    private readonly DigestPeriodCalculator _digestPeriodCalculator;
     private readonly AppClock _clock;
     private readonly ITimeZoneProvider _timeZoneProvider;
 
     public BuildDailyDigest(
         DigestItemsProvider digestItemsProvider,
+        DigestPeriodCalculator digestPeriodCalculator,
         AppClock clock,
         ITimeZoneProvider timeZoneProvider)
     {
         _digestItemsProvider = digestItemsProvider;
+        _digestPeriodCalculator = digestPeriodCalculator;
         _clock = clock;
         _timeZoneProvider = timeZoneProvider;
     }
@@ -26,7 +29,7 @@ public sealed class BuildDailyDigest
         var now = _clock.UtcNow;
         var timeZone = DateTimeZoneProviders.Tzdb[_timeZoneProvider.GetTimeZoneId()];
         var nowInZone = Instant.FromDateTimeUtc(now).InZone(timeZone);
-        var today = nowInZone.Date;
+        var today = _digestPeriodCalculator.CalculateDailyDate(nowInZone.Date);
         var items = await _digestItemsProvider.BuildAsync(today, today, timeZone.Id, cancellationToken);
 
         return new DailyDigestResult(today, items, timeZone.Id);

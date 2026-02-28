@@ -8,15 +8,18 @@ namespace SnakeFrogCalendarBot.Application.UseCases.Notifications;
 public sealed class BuildMonthlyDigest
 {
     private readonly DigestItemsProvider _digestItemsProvider;
+    private readonly DigestPeriodCalculator _digestPeriodCalculator;
     private readonly AppClock _clock;
     private readonly ITimeZoneProvider _timeZoneProvider;
 
     public BuildMonthlyDigest(
         DigestItemsProvider digestItemsProvider,
+        DigestPeriodCalculator digestPeriodCalculator,
         AppClock clock,
         ITimeZoneProvider timeZoneProvider)
     {
         _digestItemsProvider = digestItemsProvider;
+        _digestPeriodCalculator = digestPeriodCalculator;
         _clock = clock;
         _timeZoneProvider = timeZoneProvider;
     }
@@ -28,10 +31,7 @@ public sealed class BuildMonthlyDigest
         var nowInZone = Instant.FromDateTimeUtc(now).InZone(timeZone);
         var today = nowInZone.Date;
 
-        var nextMonth = today.PlusMonths(1);
-        var periodStart = new LocalDate(nextMonth.Year, nextMonth.Month, 1);
-        var lastDayOfMonth = CalendarSystem.Iso.GetDaysInMonth(nextMonth.Year, nextMonth.Month);
-        var periodEnd = new LocalDate(nextMonth.Year, nextMonth.Month, lastDayOfMonth);
+        var (periodStart, periodEnd) = _digestPeriodCalculator.CalculateMonthlyPeriod(today);
 
         var items = await _digestItemsProvider.BuildAsync(periodStart, periodEnd, timeZone.Id, cancellationToken);
 
