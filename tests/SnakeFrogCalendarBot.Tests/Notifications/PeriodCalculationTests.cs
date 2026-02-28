@@ -35,7 +35,7 @@ public sealed class PeriodCalculationTests
     [Test]
     public void BuildWeeklyDigest_OnSunday_CalculatesNextWeekCorrectly()
     {
-        var sunday = new DateTime(2026, 1, 11, 21, 0, 0, DateTimeKind.Utc);
+        var sunday = new DateTime(2026, 1, 11, 12, 0, 0, DateTimeKind.Utc);
         var clock = new TestClock(sunday);
         var timeZoneProvider = new TestTimeZoneProvider();
         var timeZone = DateTimeZoneProviders.Tzdb[timeZoneProvider.GetTimeZoneId()];

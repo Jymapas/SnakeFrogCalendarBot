@@ -78,6 +78,8 @@ try
 
             services.AddSingleton<AccessGuard>();
             services.AddSingleton<ITelegramBotClient>(new TelegramBotClient(options.TelegramBotToken));
+            services.AddSingleton<IPinnedMessageCleanupRegistry, PinnedMessageCleanupRegistry>();
+            services.AddSingleton<PinnedServiceMessageCleaner>();
             services.AddSingleton<UpdateDispatcher>();
             services.AddScoped<CommandHandlers>();
             services.AddScoped<MessageHandlers>();
@@ -129,6 +131,7 @@ try
             services.AddScoped<IEventRepository, EventRepository>();
             services.AddScoped<IAttachmentRepository, AttachmentRepository>();
             services.AddScoped<INotificationRunRepository, NotificationRunRepository>();
+            services.AddScoped<ILatestDigestPostRepository, LatestDigestPostRepository>();
             services.AddScoped<IConversationStateRepository, ConversationStateRepository>();
 
             services.AddSingleton<IClock, SystemClock>();
@@ -147,8 +150,9 @@ try
             {
                 var botClient = sp.GetRequiredService<ITelegramBotClient>();
                 var options = sp.GetRequiredService<AppOptions>();
+                var cleanupRegistry = sp.GetRequiredService<IPinnedMessageCleanupRegistry>();
                 var logger = sp.GetRequiredService<ILogger<TelegramPublisher>>();
-                return new TelegramPublisher(botClient, options.TelegramTargetChat, logger);
+                return new TelegramPublisher(botClient, options.TelegramTargetChat, cleanupRegistry, logger);
             });
 
             services.AddScoped<CreateBirthday>();
@@ -165,7 +169,13 @@ try
             services.AddScoped<BuildDailyDigest>();
             services.AddScoped<BuildWeeklyDigest>();
             services.AddScoped<BuildMonthlyDigest>();
+            services.AddSingleton<DigestPeriodCalculator>();
+            services.AddSingleton<DigestCatchUpPlanner>();
+            services.AddScoped<DigestItemsProvider>();
+            services.AddScoped<PublishDigest>();
+            services.AddScoped<RefreshLatestDigestPosts>();
             services.AddScoped<SendDigest>();
+            services.AddScoped<DigestCatchUpPublisher>();
 
             services.AddQuartz(q =>
             {
@@ -396,6 +406,9 @@ try
                 Log.Information("Проверка и исправление типа колонок в таблице notification_runs...");
                 await EnsureNotificationRunColumnsTypeAsync(dbContext);
             }
+
+            Log.Information("Проверка структуры таблицы latest_digest_posts...");
+            await EnsureLatestDigestPostsTableAsync(dbContext);
             
             var attachmentsExist = await CheckTableExistsAsync(dbContext, "attachments");
             Log.Information("Таблица attachments существует: {Exists}", attachmentsExist);
@@ -639,6 +652,14 @@ static async Task CreateTablesManuallyAsync(CalendarDbContext dbContext)
                 time_zone_id VARCHAR(100) NOT NULL,
                 created_at_utc TIMESTAMP WITH TIME ZONE NOT NULL,
                 CONSTRAINT uq_notification_runs_type_period_timezone UNIQUE(digest_type, period_start_local, period_end_local, time_zone_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS latest_digest_posts (
+                id SERIAL PRIMARY KEY,
+                digest_type INTEGER NOT NULL,
+                notification_run_id INTEGER NOT NULL,
+                telegram_message_id INTEGER NOT NULL,
+                updated_at_utc TIMESTAMP WITH TIME ZONE NOT NULL
             );";
         
         await command.ExecuteNonQueryAsync();
@@ -706,6 +727,42 @@ static async Task CreateTablesManuallyAsync(CalendarDbContext dbContext)
     catch (Exception ex)
     {
         Log.Error(ex, "Ошибка при создании таблиц вручную");
+        throw;
+    }
+}
+
+static async Task EnsureLatestDigestPostsTableAsync(CalendarDbContext dbContext)
+{
+    try
+    {
+        var connection = dbContext.Database.GetDbConnection();
+        if (connection.State != ConnectionState.Open)
+        {
+            await connection.OpenAsync();
+        }
+
+        var command = connection.CreateCommand();
+        command.CommandText = @"
+            CREATE TABLE IF NOT EXISTS latest_digest_posts (
+                id SERIAL PRIMARY KEY,
+                digest_type INTEGER NOT NULL,
+                notification_run_id INTEGER NOT NULL,
+                telegram_message_id INTEGER NOT NULL,
+                updated_at_utc TIMESTAMP WITH TIME ZONE NOT NULL
+            );
+
+            CREATE UNIQUE INDEX IF NOT EXISTS ix_latest_digest_posts_digest_type
+            ON latest_digest_posts (digest_type);
+
+            CREATE UNIQUE INDEX IF NOT EXISTS ix_latest_digest_posts_notification_run_id
+            ON latest_digest_posts (notification_run_id);";
+
+        await command.ExecuteNonQueryAsync();
+        Log.Information("Проверка структуры latest_digest_posts завершена");
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Ошибка при проверке структуры latest_digest_posts");
         throw;
     }
 }
@@ -1595,4 +1652,3 @@ static async Task<bool> IsPortOpenAsync(string host, int port)
     
     return false;
 }
-

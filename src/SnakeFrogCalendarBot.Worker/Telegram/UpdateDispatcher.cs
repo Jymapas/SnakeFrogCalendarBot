@@ -8,15 +8,18 @@ namespace SnakeFrogCalendarBot.Worker.Telegram;
 public sealed class UpdateDispatcher
 {
     private readonly AccessGuard _accessGuard;
+    private readonly PinnedServiceMessageCleaner _pinnedServiceMessageCleaner;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<UpdateDispatcher> _logger;
 
     public UpdateDispatcher(
         AccessGuard accessGuard,
+        PinnedServiceMessageCleaner pinnedServiceMessageCleaner,
         IServiceScopeFactory scopeFactory,
         ILogger<UpdateDispatcher> logger)
     {
         _accessGuard = accessGuard;
+        _pinnedServiceMessageCleaner = pinnedServiceMessageCleaner;
         _scopeFactory = scopeFactory;
         _logger = logger;
     }
@@ -26,6 +29,12 @@ public sealed class UpdateDispatcher
         if (update.CallbackQuery is { } callbackQuery)
         {
             await HandleCallbackQueryAsync(botClient, callbackQuery, cancellationToken);
+            return;
+        }
+
+        if (update.ChannelPost is { } channelPost)
+        {
+            await _pinnedServiceMessageCleaner.TryDeleteAsync(channelPost, cancellationToken);
             return;
         }
 

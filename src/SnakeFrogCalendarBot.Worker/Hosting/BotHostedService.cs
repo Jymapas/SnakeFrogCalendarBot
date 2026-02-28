@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.DependencyInjection;
 using SnakeFrogCalendarBot.Application.Abstractions.Telegram;
 using SnakeFrogCalendarBot.Worker.Telegram;
 using Telegram.Bot;
@@ -14,6 +15,7 @@ public sealed class BotHostedService : IHostedService
     private readonly ITelegramBotClient _botClient;
     private readonly UpdateDispatcher _updateDispatcher;
     private readonly ITelegramPublisher _telegramPublisher;
+    private readonly IServiceScopeFactory _serviceScopeFactory;
     private readonly ILogger<BotHostedService> _logger;
     private CancellationTokenSource? _cts;
 
@@ -21,11 +23,13 @@ public sealed class BotHostedService : IHostedService
         ITelegramBotClient botClient,
         UpdateDispatcher updateDispatcher,
         ITelegramPublisher telegramPublisher,
+        IServiceScopeFactory serviceScopeFactory,
         ILogger<BotHostedService> logger)
     {
         _botClient = botClient;
         _updateDispatcher = updateDispatcher;
         _telegramPublisher = telegramPublisher;
+        _serviceScopeFactory = serviceScopeFactory;
         _logger = logger;
     }
 
@@ -57,10 +61,21 @@ public sealed class BotHostedService : IHostedService
             _logger.LogWarning(ex, "Failed to send restart notification to channel");
         }
 
+        try
+        {
+            using var scope = _serviceScopeFactory.CreateScope();
+            var catchUpPublisher = scope.ServiceProvider.GetRequiredService<DigestCatchUpPublisher>();
+            await catchUpPublisher.TryPublishAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to publish missed digests after restart");
+        }
+
         _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var receiverOptions = new ReceiverOptions
         {
-            AllowedUpdates = new[] { UpdateType.Message, UpdateType.CallbackQuery }
+            AllowedUpdates = new[] { UpdateType.Message, UpdateType.CallbackQuery, UpdateType.ChannelPost }
         };
 
         _botClient.StartReceiving(

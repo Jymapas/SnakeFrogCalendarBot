@@ -1,6 +1,8 @@
 using SnakeFrogCalendarBot.Application.Abstractions.Persistence;
 using SnakeFrogCalendarBot.Application.Abstractions.Time;
+using SnakeFrogCalendarBot.Application.UseCases.Notifications;
 using SnakeFrogCalendarBot.Domain.Entities;
+using Microsoft.Extensions.Logging;
 
 namespace SnakeFrogCalendarBot.Application.UseCases.Birthdays;
 
@@ -8,14 +10,22 @@ public sealed class CreateBirthday
 {
     private readonly IBirthdayRepository _birthdayRepository;
     private readonly IClock _clock;
+    private readonly RefreshLatestDigestPosts _refreshLatestDigestPosts;
+    private readonly ILogger<CreateBirthday> _logger;
 
-    public CreateBirthday(IBirthdayRepository birthdayRepository, IClock clock)
+    public CreateBirthday(
+        IBirthdayRepository birthdayRepository,
+        IClock clock,
+        RefreshLatestDigestPosts refreshLatestDigestPosts,
+        ILogger<CreateBirthday> logger)
     {
         _birthdayRepository = birthdayRepository;
         _clock = clock;
+        _refreshLatestDigestPosts = refreshLatestDigestPosts;
+        _logger = logger;
     }
 
-    public Task ExecuteAsync(CreateBirthdayCommand command, CancellationToken cancellationToken)
+    public async Task ExecuteAsync(CreateBirthdayCommand command, CancellationToken cancellationToken)
     {
         var now = _clock.UtcNow;
         var birthday = new Birthday(
@@ -26,7 +36,16 @@ public sealed class CreateBirthday
             command.Contact,
             now);
 
-        return _birthdayRepository.AddAsync(birthday, cancellationToken);
+        await _birthdayRepository.AddAsync(birthday, cancellationToken);
+
+        try
+        {
+            await _refreshLatestDigestPosts.ForBirthdayAsync(birthday, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to refresh latest digest posts after creating birthday {PersonName}", birthday.PersonName);
+        }
     }
 }
 

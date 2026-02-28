@@ -15,6 +15,7 @@ public sealed class CalendarDbContext : DbContext
     public DbSet<Event> Events => Set<Event>();
     public DbSet<Attachment> Attachments => Set<Attachment>();
     public DbSet<NotificationRun> NotificationRuns => Set<NotificationRun>();
+    public DbSet<LatestDigestPost> LatestDigestPosts => Set<LatestDigestPost>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
