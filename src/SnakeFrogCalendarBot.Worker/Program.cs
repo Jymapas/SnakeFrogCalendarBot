@@ -78,6 +78,8 @@ try
 
             services.AddSingleton<AccessGuard>();
             services.AddSingleton<ITelegramBotClient>(new TelegramBotClient(options.TelegramBotToken));
+            services.AddSingleton<IPinnedMessageCleanupRegistry, PinnedMessageCleanupRegistry>();
+            services.AddSingleton<PinnedServiceMessageCleaner>();
             services.AddSingleton<UpdateDispatcher>();
             services.AddScoped<CommandHandlers>();
             services.AddScoped<MessageHandlers>();
@@ -148,8 +150,9 @@ try
             {
                 var botClient = sp.GetRequiredService<ITelegramBotClient>();
                 var options = sp.GetRequiredService<AppOptions>();
+                var cleanupRegistry = sp.GetRequiredService<IPinnedMessageCleanupRegistry>();
                 var logger = sp.GetRequiredService<ILogger<TelegramPublisher>>();
-                return new TelegramPublisher(botClient, options.TelegramTargetChat, logger);
+                return new TelegramPublisher(botClient, options.TelegramTargetChat, cleanupRegistry, logger);
             });
 
             services.AddScoped<CreateBirthday>();
