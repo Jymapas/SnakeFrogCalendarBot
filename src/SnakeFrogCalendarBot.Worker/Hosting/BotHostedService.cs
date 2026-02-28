@@ -75,7 +75,7 @@ public sealed class BotHostedService : IHostedService
         _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var receiverOptions = new ReceiverOptions
         {
-            AllowedUpdates = new[] { UpdateType.Message, UpdateType.CallbackQuery }
+            AllowedUpdates = new[] { UpdateType.Message, UpdateType.CallbackQuery, UpdateType.ChannelPost }
         };
 
         _botClient.StartReceiving(
