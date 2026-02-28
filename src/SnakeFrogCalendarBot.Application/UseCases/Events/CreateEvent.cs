@@ -1,7 +1,9 @@
 using SnakeFrogCalendarBot.Application.Abstractions.Persistence;
 using SnakeFrogCalendarBot.Application.Abstractions.Time;
+using SnakeFrogCalendarBot.Application.UseCases.Notifications;
 using SnakeFrogCalendarBot.Domain.Entities;
 using SnakeFrogCalendarBot.Domain.Enums;
+using Microsoft.Extensions.Logging;
 
 namespace SnakeFrogCalendarBot.Application.UseCases.Events;
 
@@ -10,18 +12,24 @@ public sealed class CreateEvent
     private readonly IEventRepository _eventRepository;
     private readonly IClock _clock;
     private readonly ITimeZoneProvider _timeZoneProvider;
+    private readonly RefreshLatestDigestPosts _refreshLatestDigestPosts;
+    private readonly ILogger<CreateEvent> _logger;
 
     public CreateEvent(
         IEventRepository eventRepository,
         IClock clock,
-        ITimeZoneProvider timeZoneProvider)
+        ITimeZoneProvider timeZoneProvider,
+        RefreshLatestDigestPosts refreshLatestDigestPosts,
+        ILogger<CreateEvent> logger)
     {
         _eventRepository = eventRepository;
         _clock = clock;
         _timeZoneProvider = timeZoneProvider;
+        _refreshLatestDigestPosts = refreshLatestDigestPosts;
+        _logger = logger;
     }
 
-    public Task ExecuteAsync(CreateEventCommand command, CancellationToken cancellationToken)
+    public async Task ExecuteAsync(CreateEventCommand command, CancellationToken cancellationToken)
     {
         var now = _clock.UtcNow;
         Event eventEntity;
@@ -61,7 +69,16 @@ public sealed class CreateEvent
                 now);
         }
 
-        return _eventRepository.AddAsync(eventEntity, cancellationToken);
+        await _eventRepository.AddAsync(eventEntity, cancellationToken);
+
+        try
+        {
+            await _refreshLatestDigestPosts.ForEventAsync(eventEntity, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to refresh latest digest posts after creating event {Title}", eventEntity.Title);
+        }
     }
 }
 
