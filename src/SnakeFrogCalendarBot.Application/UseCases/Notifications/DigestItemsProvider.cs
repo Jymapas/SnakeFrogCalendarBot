@@ -41,7 +41,12 @@ public sealed class DigestItemsProvider
                 continue;
             }
 
-            var attachment = await _attachmentRepository.GetCurrentByEventIdAsync(eventEntity.Id, cancellationToken);
+            var attachments = await _attachmentRepository.GetByEventIdAsync(eventEntity.Id, cancellationToken);
+            var currentAttachments = attachments.Where(attachment => attachment.IsCurrent).ToList();
+            var attachmentsForDigest = currentAttachments.Count > 0
+                ? currentAttachments
+                : attachments.ToList();
+
             items.Add(new CalendarItemDto
             {
                 Date = eventDate,
@@ -49,7 +54,10 @@ public sealed class DigestItemsProvider
                 Title = eventEntity.Title,
                 Type = CalendarItemType.Event,
                 IsAllDay = eventEntity.IsAllDay,
-                HasAttachment = attachment is not null
+                HasAttachment = attachmentsForDigest.Count > 0,
+                Attachments = attachmentsForDigest
+                    .Select(attachment => new DigestAttachmentDto(attachment.TelegramFileId, attachment.FileName))
+                    .ToList()
             });
         }
 
@@ -68,6 +76,7 @@ public sealed class DigestItemsProvider
                 Type = CalendarItemType.Birthday,
                 IsAllDay = true,
                 HasAttachment = false,
+                Attachments = [],
                 BirthYear = birthday.BirthYear,
                 Contact = birthday.Contact
             });

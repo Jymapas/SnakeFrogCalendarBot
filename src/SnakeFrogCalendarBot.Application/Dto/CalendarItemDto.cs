@@ -12,9 +12,14 @@ public sealed record CalendarItemDto
     public CalendarItemType Type { get; init; }
     public bool IsAllDay { get; init; }
     public bool HasAttachment { get; init; }
+    public IReadOnlyList<DigestAttachmentDto> Attachments { get; init; } = [];
     public int? BirthYear { get; init; }
     public string? Contact { get; init; }
 }
+
+public sealed record DigestAttachmentDto(
+    string TelegramFileId,
+    string FileName);
 
 public enum CalendarItemType
 {
