@@ -1,7 +1,9 @@
 using SnakeFrogCalendarBot.Application.Abstractions.Persistence;
 using SnakeFrogCalendarBot.Application.Abstractions.Time;
+using SnakeFrogCalendarBot.Application.UseCases.Notifications;
 using SnakeFrogCalendarBot.Domain.Entities;
 using SnakeFrogCalendarBot.Domain.Enums;
+using Microsoft.Extensions.Logging;
 
 namespace SnakeFrogCalendarBot.Application.UseCases.Events;
 
@@ -9,11 +11,19 @@ public sealed class UpdateEvent
 {
     private readonly IEventRepository _eventRepository;
     private readonly IClock _clock;
+    private readonly RefreshLatestDigestPosts _refreshLatestDigestPosts;
+    private readonly ILogger<UpdateEvent> _logger;
 
-    public UpdateEvent(IEventRepository eventRepository, IClock clock)
+    public UpdateEvent(
+        IEventRepository eventRepository,
+        IClock clock,
+        RefreshLatestDigestPosts refreshLatestDigestPosts,
+        ILogger<UpdateEvent> logger)
     {
         _eventRepository = eventRepository;
         _clock = clock;
+        _refreshLatestDigestPosts = refreshLatestDigestPosts;
+        _logger = logger;
     }
 
     public async Task ExecuteAsync(UpdateEventCommand command, CancellationToken cancellationToken)
@@ -74,6 +84,15 @@ public sealed class UpdateEvent
         }
 
         await _eventRepository.UpdateAsync(eventEntity, cancellationToken);
+
+        try
+        {
+            await _refreshLatestDigestPosts.ForEventAsync(eventEntity, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to refresh latest digest posts after updating event {EventId}", eventEntity.Id);
+        }
     }
 }
 
