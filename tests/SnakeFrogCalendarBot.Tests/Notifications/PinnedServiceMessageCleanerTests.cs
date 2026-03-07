@@ -87,6 +87,7 @@ public sealed class PinnedServiceMessageCleanerTests
         public List<int> DeletedMessageIds { get; } = [];
 
         public Task<int> SendMessageAsync(string text, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task SendDocumentAsync(string telegramFileId, string fileName, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task EditMessageAsync(int messageId, string text, CancellationToken cancellationToken) => throw new NotSupportedException();
 
         public Task DeleteMessageAsync(int messageId, CancellationToken cancellationToken)
