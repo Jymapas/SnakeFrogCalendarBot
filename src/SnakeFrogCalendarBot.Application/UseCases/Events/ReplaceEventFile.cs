@@ -1,6 +1,8 @@
 using SnakeFrogCalendarBot.Application.Abstractions.Persistence;
 using SnakeFrogCalendarBot.Application.Abstractions.Time;
+using SnakeFrogCalendarBot.Application.UseCases.Notifications;
 using SnakeFrogCalendarBot.Domain.Entities;
+using Microsoft.Extensions.Logging;
 
 namespace SnakeFrogCalendarBot.Application.UseCases.Events;
 
@@ -9,15 +11,21 @@ public sealed class ReplaceEventFile
     private readonly IEventRepository _eventRepository;
     private readonly IAttachmentRepository _attachmentRepository;
     private readonly IClock _clock;
+    private readonly RefreshLatestDigestPosts _refreshLatestDigestPosts;
+    private readonly ILogger<ReplaceEventFile> _logger;
 
     public ReplaceEventFile(
         IEventRepository eventRepository,
         IAttachmentRepository attachmentRepository,
-        IClock clock)
+        IClock clock,
+        RefreshLatestDigestPosts refreshLatestDigestPosts,
+        ILogger<ReplaceEventFile> logger)
     {
         _eventRepository = eventRepository;
         _attachmentRepository = attachmentRepository;
         _clock = clock;
+        _refreshLatestDigestPosts = refreshLatestDigestPosts;
+        _logger = logger;
     }
 
     public async Task ExecuteAsync(ReplaceEventFileCommand command, CancellationToken cancellationToken)
@@ -57,6 +65,15 @@ public sealed class ReplaceEventFile
             _clock.UtcNow);
 
         await _attachmentRepository.AddAsync(newAttachment, cancellationToken);
+
+        try
+        {
+            await _refreshLatestDigestPosts.ForEventAsync(eventEntity, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to refresh latest digest posts after replacing file for event {EventId}", eventEntity.Id);
+        }
     }
 }
 
