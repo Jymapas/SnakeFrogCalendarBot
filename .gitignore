@@ -61,3 +61,4 @@ nunit-*.xml
 .agents/.skills-repo
 .agents
 .DS_Store
+mini-app/.env.development
