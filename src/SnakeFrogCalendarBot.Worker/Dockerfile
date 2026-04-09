@@ -11,7 +11,7 @@ COPY . .
 WORKDIR "/src/src/SnakeFrogCalendarBot.Worker"
 RUN dotnet publish -c Release -o /app/publish /p:UseAppHost=false
 
-FROM mcr.microsoft.com/dotnet/runtime:10.0
+FROM mcr.microsoft.com/dotnet/aspnet:10.0
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends tzdata locales iputils-ping \

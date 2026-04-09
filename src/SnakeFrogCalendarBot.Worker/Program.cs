@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -23,6 +25,7 @@ using SnakeFrogCalendarBot.Worker.Config;
 using SnakeFrogCalendarBot.Worker.Hosting;
 using SnakeFrogCalendarBot.Worker.Logging;
 using SnakeFrogCalendarBot.Worker.Telegram;
+using SnakeFrogCalendarBot.Worker.Api;
 using SnakeFrogCalendarBot.Worker.Telegram.Handlers;
 using Telegram.Bot;
 using Npgsql.EntityFrameworkCore.PostgreSQL;
@@ -65,16 +68,23 @@ try
 {
     await EnsurePostgresRunningAsync();
 
-    var builder = Host.CreateDefaultBuilder(args)
-        .UseSerilog()
-        .ConfigureAppConfiguration((context, config) =>
+    var builder = WebApplication.CreateBuilder(args);
+    builder.Host.UseSerilog();
+    builder.WebHost.UseUrls("http://*:8080");
+
+    {
+        var services = builder.Services;
+        var options = AppOptions.FromConfiguration(builder.Configuration);
+        services.AddSingleton(options);
+
+        var miniAppOrigin = options.MiniAppAllowedOrigin;
+        services.AddCors(cors => cors.AddDefaultPolicy(policy =>
         {
-            config.AddEnvironmentVariables();
-        })
-        .ConfigureServices((context, services) =>
-        {
-            var options = AppOptions.FromConfiguration(context.Configuration);
-            services.AddSingleton(options);
+            if (!string.IsNullOrWhiteSpace(miniAppOrigin))
+                policy.WithOrigins(miniAppOrigin).AllowAnyHeader().AllowAnyMethod();
+            else
+                policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod();
+        }));
 
             services.AddSingleton<AccessGuard>();
             services.AddSingleton<ITelegramBotClient>(new TelegramBotClient(options.TelegramBotToken));
@@ -202,9 +212,15 @@ try
             });
 
             services.AddQuartzHostedService(q => q.WaitForJobsToComplete = true);
-        });
+    }
 
-    var host = builder.Build();
+    var app = builder.Build();
+    app.UseCors();
+    app.MapPost("/api/events", EventsEndpoints.Handle);
+    app.MapPost("/api/birthdays", BirthdaysEndpoints.Handle);
+    app.MapPost("/api/deploy", DeployEndpoints.Handle);
+
+    var host = app;
 
     using (var scope = host.Services.CreateScope())
     {
@@ -487,7 +503,7 @@ try
         }
     }
 
-    await host.RunAsync();
+    await app.RunAsync();
 }
 catch (Exception ex)
 {
