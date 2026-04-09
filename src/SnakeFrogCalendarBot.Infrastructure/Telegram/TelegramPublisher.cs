@@ -54,6 +54,25 @@ public sealed class TelegramPublisher : ITelegramPublisher
         }
     }
 
+    public async Task SendDocumentAsync(string telegramFileId, string fileName, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var chatId = new ChatId(_targetChat);
+            await _botClient.SendDocument(
+                chatId,
+                InputFile.FromFileId(telegramFileId),
+                caption: $"Файл: {fileName}",
+                cancellationToken: cancellationToken);
+            _logger.LogInformation("Document sent to {TargetChat}: {FileName}", _targetChat, fileName);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send document {FileName} to {TargetChat}", fileName, _targetChat);
+            throw;
+        }
+    }
+
     public async Task EditMessageAsync(int messageId, string text, CancellationToken cancellationToken)
     {
         try

@@ -58,3 +58,4 @@ nunit-*.xml
 .env
 .cursorignore
 .DS_Store
+.agents/.skills-repo

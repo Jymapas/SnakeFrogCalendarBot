@@ -198,7 +198,10 @@ public sealed class RefreshLatestDigestPostsTests
 
         public Task<Attachment?> GetLatestByEventIdForUpdateAsync(int eventId, CancellationToken cancellationToken) => throw new NotSupportedException();
 
-        public Task<IReadOnlyList<Attachment>> GetByEventIdAsync(int eventId, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<IReadOnlyList<Attachment>> GetByEventIdAsync(int eventId, CancellationToken cancellationToken)
+        {
+            return Task.FromResult<IReadOnlyList<Attachment>>([]);
+        }
 
         public Task UpdateAsync(Attachment attachment, CancellationToken cancellationToken) => throw new NotSupportedException();
     }
@@ -209,6 +212,11 @@ public sealed class RefreshLatestDigestPostsTests
         public List<string> EditedTexts { get; } = [];
 
         public Task<int> SendMessageAsync(string text, CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task SendDocumentAsync(string telegramFileId, string fileName, CancellationToken cancellationToken)
         {
             throw new NotSupportedException();
         }

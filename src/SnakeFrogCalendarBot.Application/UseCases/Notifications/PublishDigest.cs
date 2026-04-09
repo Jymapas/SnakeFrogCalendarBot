@@ -3,6 +3,7 @@ using NodaTime;
 using SnakeFrogCalendarBot.Application.Abstractions.Persistence;
 using SnakeFrogCalendarBot.Application.Abstractions.Telegram;
 using SnakeFrogCalendarBot.Application.Abstractions.Time;
+using SnakeFrogCalendarBot.Application.Dto;
 using SnakeFrogCalendarBot.Application.Formatting;
 using SnakeFrogCalendarBot.Domain.Entities;
 using SnakeFrogCalendarBot.Domain.Enums;
@@ -105,7 +106,11 @@ public sealed class PublishDigest
             _ => throw new InvalidOperationException($"Unsupported digest type: {digestType}")
         };
 
-        var messageId = await _sendDigest.ExecuteAsync(digestText, cancellationToken);
+        var digestAttachments = digestType == DigestType.Daily
+            ? ExtractDailyAttachments(items)
+            : [];
+
+        var messageId = await _sendDigest.ExecuteAsync(digestText, digestAttachments, cancellationToken);
         var now = _clock.UtcNow;
 
         var notificationRun = new NotificationRun(
@@ -135,6 +140,15 @@ public sealed class PublishDigest
             periodEnd);
 
         return true;
+    }
+
+    private static IReadOnlyList<DigestAttachmentDto> ExtractDailyAttachments(IReadOnlyList<CalendarItemDto> items)
+    {
+        return items
+            .Where(item => item.Type == CalendarItemType.Event)
+            .SelectMany(item => item.Attachments)
+            .DistinctBy(attachment => attachment.TelegramFileId)
+            .ToList();
     }
 
     private async Task TryUpdateMonthlyPinAsync(

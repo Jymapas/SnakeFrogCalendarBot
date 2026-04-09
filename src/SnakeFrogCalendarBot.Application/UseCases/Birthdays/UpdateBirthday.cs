@@ -1,6 +1,8 @@
 using SnakeFrogCalendarBot.Application.Abstractions.Persistence;
 using SnakeFrogCalendarBot.Application.Abstractions.Time;
+using SnakeFrogCalendarBot.Application.UseCases.Notifications;
 using SnakeFrogCalendarBot.Domain.Entities;
+using Microsoft.Extensions.Logging;
 
 namespace SnakeFrogCalendarBot.Application.UseCases.Birthdays;
 
@@ -8,11 +10,19 @@ public sealed class UpdateBirthday
 {
     private readonly IBirthdayRepository _birthdayRepository;
     private readonly IClock _clock;
+    private readonly RefreshLatestDigestPosts _refreshLatestDigestPosts;
+    private readonly ILogger<UpdateBirthday> _logger;
 
-    public UpdateBirthday(IBirthdayRepository birthdayRepository, IClock clock)
+    public UpdateBirthday(
+        IBirthdayRepository birthdayRepository,
+        IClock clock,
+        RefreshLatestDigestPosts refreshLatestDigestPosts,
+        ILogger<UpdateBirthday> logger)
     {
         _birthdayRepository = birthdayRepository;
         _clock = clock;
+        _refreshLatestDigestPosts = refreshLatestDigestPosts;
+        _logger = logger;
     }
 
     public async Task ExecuteAsync(UpdateBirthdayCommand command, CancellationToken cancellationToken)
@@ -49,6 +59,15 @@ public sealed class UpdateBirthday
         }
 
         await _birthdayRepository.UpdateAsync(birthday, cancellationToken);
+
+        try
+        {
+            await _refreshLatestDigestPosts.ForBirthdayAsync(birthday, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to refresh latest digest posts after updating birthday {BirthdayId}", birthday.Id);
+        }
     }
 }
 
