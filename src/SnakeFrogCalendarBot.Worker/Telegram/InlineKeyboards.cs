@@ -1,12 +1,13 @@
+using Telegram.Bot.Types;
 using Telegram.Bot.Types.ReplyMarkups;
 
 namespace SnakeFrogCalendarBot.Worker.Telegram;
 
 public static class InlineKeyboards
 {
-    public static InlineKeyboardMarkup MainMenu()
+    public static InlineKeyboardMarkup MainMenu(string? miniAppUrl = null)
     {
-        return new InlineKeyboardMarkup(new[]
+        var rows = new List<InlineKeyboardButton[]>
         {
             new[]
             {
@@ -18,11 +19,29 @@ public static class InlineKeyboards
                 InlineKeyboardButton.WithCallbackData("📅 На неделю", "event_view_week:0"),
                 InlineKeyboardButton.WithCallbackData("📅 На месяц", "event_view_month:0")
             },
-            new[]
+        };
+
+        if (!string.IsNullOrWhiteSpace(miniAppUrl))
+        {
+            rows.Add(new[]
+            {
+                new InlineKeyboardButton("➕ Добавить событие")
+                    { WebApp = new WebAppInfo { Url = $"{miniAppUrl}?form=event" } },
+                new InlineKeyboardButton("🎂 Добавить ДР")
+                    { WebApp = new WebAppInfo { Url = $"{miniAppUrl}?form=birthday" } },
+            });
+        }
+        else
+        {
+            rows.Add(new[]
             {
                 InlineKeyboardButton.WithCallbackData("➕ Добавить событие", "cmd:event_add"),
                 InlineKeyboardButton.WithCallbackData("➕ Добавить день рождения", "cmd:birthday_add")
-            },
+            });
+        }
+
+        rows.AddRange(new[]
+        {
             new[]
             {
                 InlineKeyboardButton.WithCallbackData("📋 Список событий", "cmd:event_list"),
@@ -39,6 +58,8 @@ public static class InlineKeyboards
                 InlineKeyboardButton.WithCallbackData("🗑 Удалить день рождения", "cmd:birthday_delete")
             }
         });
+
+        return new InlineKeyboardMarkup(rows);
     }
 
     public static InlineKeyboardMarkup EventsMenu()

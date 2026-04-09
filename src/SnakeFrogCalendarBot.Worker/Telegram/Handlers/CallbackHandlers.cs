@@ -29,6 +29,7 @@ public sealed class CallbackHandlers
     private readonly DeleteEvent _deleteEvent;
     private readonly DeleteBirthday _deleteBirthday;
     private readonly string _botToken;
+    private readonly string _miniAppUrl;
     private readonly HttpClient _httpClient;
     private readonly IServiceProvider _serviceProvider;
     private readonly ListBirthdays _listBirthdays;
@@ -67,6 +68,7 @@ public sealed class CallbackHandlers
         _deleteEvent = deleteEvent;
         _deleteBirthday = deleteBirthday;
         _botToken = appOptions.TelegramBotToken;
+        _miniAppUrl = appOptions.MiniAppUrl;
         _httpClient = new HttpClient();
         _serviceProvider = serviceProvider;
         _listBirthdays = listBirthdays;
@@ -966,7 +968,7 @@ public sealed class CallbackHandlers
         switch (menuType)
         {
             case "main":
-                keyboard = InlineKeyboards.MainMenu();
+                keyboard = InlineKeyboards.MainMenu(_miniAppUrl);
                 text = "Выберите действие:";
                 break;
             case "events":

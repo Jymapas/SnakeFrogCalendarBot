@@ -13,6 +13,7 @@ public sealed class AppOptions
     public string TimeZone { get; init; } = string.Empty;
     public string PostgresConnectionString { get; init; } = string.Empty;
     public TimeSpan TelegramChannelTriggerWindow { get; init; } = DefaultTelegramChannelTriggerWindow;
+    public string MiniAppUrl { get; init; } = string.Empty;
     public string MiniAppAllowedOrigin { get; init; } = string.Empty;
     public string GitHubDeployToken { get; init; } = string.Empty;
     public string GitHubRepo { get; init; } = string.Empty;
@@ -132,6 +133,7 @@ public sealed class AppOptions
             TimeZone = timeZone,
             PostgresConnectionString = connectionString,
             TelegramChannelTriggerWindow = triggerWindow,
+            MiniAppUrl = configuration["MINI_APP_URL"]?.Trim() ?? string.Empty,
             MiniAppAllowedOrigin = configuration["MINI_APP_ALLOWED_ORIGIN"]?.Trim() ?? string.Empty,
             GitHubDeployToken = configuration["GITHUB_DEPLOY_TOKEN"]?.Trim() ?? string.Empty,
             GitHubRepo = configuration["GITHUB_REPO"]?.Trim() ?? string.Empty
