@@ -1,10 +1,6 @@
 name: Deploy Mini App to GitHub Pages
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'mini-app/**'
   workflow_dispatch:
 
 permissions:
