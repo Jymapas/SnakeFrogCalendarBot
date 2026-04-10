@@ -216,6 +216,7 @@ try
     }
 
     var app = builder.Build();
+    app.UseRouting();
     app.UseCors(corsPolicyName);
     app.MapPost("/api/events", EventsEndpoints.Handle).RequireCors(corsPolicyName);
     app.MapPost("/api/birthdays", BirthdaysEndpoints.Handle).RequireCors(corsPolicyName);
