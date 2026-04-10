@@ -11,18 +11,18 @@ interface CreateEventRequest {
 
 function buildDateString(dateVal: string, timeVal: string, isAllDay: boolean, isYearly: boolean): string {
   if (isYearly) {
-    // Extract dd.MM from yyyy-MM-dd
     const [, m, d] = dateVal.split('-')
     return `${d}.${m}`
   }
   if (isAllDay) {
-    return dateVal // yyyy-MM-dd — RuDateTimeParser understands it
+    return dateVal
   }
-  return `${dateVal} ${timeVal}` // yyyy-MM-dd HH:mm
+  return `${dateVal} ${timeVal}`
 }
 
 export function renderEventForm(container: HTMLElement): void {
   const today = new Date().toISOString().split('T')[0]
+  const tg = window.Telegram?.WebApp
 
   container.innerHTML = `
     <h2 class="form-title">Новое событие</h2>
@@ -38,11 +38,11 @@ export function renderEventForm(container: HTMLElement): void {
       </div>
 
       <div class="field field-row">
-        <input id="allday" type="checkbox" checked />
+        <input id="allday" type="checkbox" />
         <label for="allday">Весь день</label>
       </div>
 
-      <div class="field" id="time-field" style="display:none">
+      <div class="field" id="time-field">
         <label for="time">Время</label>
         <input id="time" type="time" value="12:00" />
       </div>
@@ -71,15 +71,14 @@ export function renderEventForm(container: HTMLElement): void {
   const alldayEl = document.getElementById('allday') as HTMLInputElement
   const timeField = document.getElementById('time-field') as HTMLElement
   alldayEl.addEventListener('change', () => {
-    timeField.style.display = alldayEl.checked ? 'none' : 'flex'
+    timeField.style.display = alldayEl.checked ? 'none' : ''
   })
 
-  const tg = window.Telegram?.WebApp
-  tg?.MainButton.setText('Добавить событие')
-  tg?.MainButton.show()
-  tg?.MainButton.enable()
+  // BackButton
+  tg?.BackButton.show()
+  tg?.BackButton.onClick(() => history.back())
 
-  tg?.MainButton.onClick(async () => {
+  async function submit(): Promise<void> {
     const title = (document.getElementById('title') as HTMLInputElement).value.trim()
     const dateVal = (document.getElementById('date') as HTMLInputElement).value
     const timeVal = (document.getElementById('time') as HTMLInputElement).value
@@ -111,5 +110,10 @@ export function renderEventForm(container: HTMLElement): void {
       tg?.MainButton.hideProgress()
       tg?.MainButton.enable()
     }
-  })
+  }
+
+  tg?.MainButton.setText('Добавить событие')
+  tg?.MainButton.show()
+  tg?.MainButton.enable()
+  tg?.MainButton.onClick(submit)
 }

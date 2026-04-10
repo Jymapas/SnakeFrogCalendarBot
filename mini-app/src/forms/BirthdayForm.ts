@@ -24,6 +24,7 @@ export function renderBirthdayForm(container: HTMLElement): void {
   const now = new Date()
   const curMonth = now.getMonth() + 1
   const curDay = now.getDate()
+  const tg = window.Telegram?.WebApp
 
   container.innerHTML = `
     <h2 class="form-title">Новый день рождения</h2>
@@ -58,18 +59,16 @@ export function renderBirthdayForm(container: HTMLElement): void {
     </form>
   `
 
-  // Set current day/month as defaults
   const dayEl = document.getElementById('day') as HTMLSelectElement
   const monthEl = document.getElementById('month') as HTMLSelectElement
   dayEl.value = String(curDay)
   monthEl.value = String(curMonth)
 
-  const tg = window.Telegram?.WebApp
-  tg?.MainButton.setText('Добавить день рождения')
-  tg?.MainButton.show()
-  tg?.MainButton.enable()
+  // BackButton
+  tg?.BackButton.show()
+  tg?.BackButton.onClick(() => history.back())
 
-  tg?.MainButton.onClick(async () => {
+  async function submit(): Promise<void> {
     const personName = (document.getElementById('name') as HTMLInputElement).value.trim()
     const day = (document.getElementById('day') as HTMLSelectElement).value
     const month = (document.getElementById('month') as HTMLSelectElement).value
@@ -83,7 +82,6 @@ export function renderBirthdayForm(container: HTMLElement): void {
       return
     }
 
-    // Format: dd.MM or dd.MM.yyyy
     const dd = day.padStart(2, '0')
     const mm = month.padStart(2, '0')
     const date = yearInput ? `${dd}.${mm}.${yearInput}` : `${dd}.${mm}`
@@ -106,5 +104,10 @@ export function renderBirthdayForm(container: HTMLElement): void {
       tg?.MainButton.hideProgress()
       tg?.MainButton.enable()
     }
-  })
+  }
+
+  tg?.MainButton.setText('Добавить день рождения')
+  tg?.MainButton.show()
+  tg?.MainButton.enable()
+  tg?.MainButton.onClick(submit)
 }

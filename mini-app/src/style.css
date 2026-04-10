@@ -49,24 +49,25 @@ body {
 
 label {
   font-size: 14px;
-  color: var(--tg-hint);
+  color: var(--tg-text);
   font-weight: 500;
+  opacity: 0.75;
 }
 
 input, textarea {
   background: var(--tg-secondary-bg);
-  border: none;
+  border: 1.5px solid transparent;
   border-radius: 10px;
   padding: 12px 14px;
   font-size: 16px;
   color: var(--tg-text);
   width: 100%;
   outline: none;
-  transition: box-shadow 0.15s;
+  transition: border-color 0.15s;
 }
 
 input:focus, textarea:focus {
-  box-shadow: 0 0 0 2px var(--tg-button);
+  border-color: var(--tg-button);
 }
 
 textarea {
@@ -99,7 +100,7 @@ textarea {
 
 select {
   background: var(--tg-secondary-bg);
-  border: none;
+  border: 1.5px solid transparent;
   border-radius: 10px;
   padding: 12px 14px;
   font-size: 16px;
