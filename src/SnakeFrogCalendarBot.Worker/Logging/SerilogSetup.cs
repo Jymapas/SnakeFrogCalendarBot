@@ -5,7 +5,7 @@ namespace SnakeFrogCalendarBot.Worker.Logging;
 
 public static class SerilogSetup
 {
-    public static ILogger CreateLogger()
+    public static Serilog.ILogger CreateLogger()
     {
         var logLevelEnv = Environment.GetEnvironmentVariable("LOG_LEVEL")?.Trim() ?? "Information";
         var logLevel = ParseLogLevel(logLevelEnv);
