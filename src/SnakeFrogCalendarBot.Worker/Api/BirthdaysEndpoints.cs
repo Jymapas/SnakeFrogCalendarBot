@@ -11,9 +11,9 @@ public static class BirthdaysEndpoints
     public static async Task<IResult> Handle(
         [FromBody] CreateBirthdayRequest body,
         HttpRequest request,
-        AppOptions options,
-        IBirthdayDateParser birthdayDateParser,
-        CreateBirthday createBirthday,
+        [FromServices] AppOptions options,
+        [FromServices] IBirthdayDateParser birthdayDateParser,
+        [FromServices] CreateBirthday createBirthday,
         CancellationToken cancellationToken)
     {
         var userId = TelegramInitDataValidator.Validate(request, options);

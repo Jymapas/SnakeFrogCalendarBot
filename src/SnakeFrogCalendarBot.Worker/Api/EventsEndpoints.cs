@@ -14,11 +14,11 @@ public static class EventsEndpoints
     public static async Task<IResult> Handle(
         [FromBody] CreateEventRequest body,
         HttpRequest request,
-        AppOptions options,
-        IDateTimeParser dateParser,
-        IBirthdayDateParser birthdayDateParser,
-        ITimeZoneProvider timeZoneProvider,
-        CreateEvent createEvent,
+        [FromServices] AppOptions options,
+        [FromServices] IDateTimeParser dateParser,
+        [FromServices] IBirthdayDateParser birthdayDateParser,
+        [FromServices] ITimeZoneProvider timeZoneProvider,
+        [FromServices] CreateEvent createEvent,
         CancellationToken cancellationToken)
     {
         var userId = TelegramInitDataValidator.Validate(request, options);

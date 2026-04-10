@@ -7,6 +7,7 @@ using SnakeFrogCalendarBot.Application.UseCases.Birthdays;
 using SnakeFrogCalendarBot.Application.UseCases.Events;
 using SnakeFrogCalendarBot.Application.UseCases.Notifications;
 using SnakeFrogCalendarBot.Domain.Entities;
+using SnakeFrogCalendarBot.Worker.Config;
 using SnakeFrogCalendarBot.Worker.Telegram;
 using Telegram.Bot;
 using Telegram.Bot.Types;
@@ -35,6 +36,7 @@ public sealed class CommandHandlers
     private readonly CreateBirthday _createBirthday;
     private readonly ITimeZoneProvider _timeZoneProvider;
     private readonly IServiceProvider _serviceProvider;
+    private readonly string _miniAppUrl;
 
     public CommandHandlers(
         ITelegramBotClient botClient,
@@ -55,7 +57,8 @@ public sealed class CommandHandlers
         IBirthdayDateParser birthdayDateParser,
         CreateBirthday createBirthday,
         ITimeZoneProvider timeZoneProvider,
-        IServiceProvider serviceProvider)
+        IServiceProvider serviceProvider,
+        AppOptions appOptions)
     {
         _botClient = botClient;
         _conversationRepository = conversationRepository;
@@ -76,6 +79,7 @@ public sealed class CommandHandlers
         _createBirthday = createBirthday;
         _timeZoneProvider = timeZoneProvider;
         _serviceProvider = serviceProvider;
+        _miniAppUrl = appOptions.MiniAppUrl;
     }
 
     public async Task HandleAsync(Message message, CancellationToken cancellationToken)
@@ -531,15 +535,24 @@ public sealed class CommandHandlers
     private async Task ShowMainMenuAsync(Message message, CancellationToken cancellationToken)
     {
         var isStart = message.Text?.Trim() == BotCommands.Start;
-        var text = isStart 
+        var text = isStart
             ? "Добро пожаловать! Используйте клавиатуру для быстрого доступа к функциям."
             : "Используйте клавиатуру для быстрого доступа к функциям.";
-        
+
         await _botClient.SendMessage(
             message.Chat.Id,
             text,
             replyMarkup: ReplyKeyboards.MainKeyboard(),
             cancellationToken: cancellationToken);
+
+        if (!string.IsNullOrWhiteSpace(_miniAppUrl))
+        {
+            await _botClient.SendMessage(
+                message.Chat.Id,
+                "Быстрое добавление:",
+                replyMarkup: InlineKeyboards.MainMenu(_miniAppUrl),
+                cancellationToken: cancellationToken);
+        }
     }
 
     private async Task SendEventViewWeekFromCommandAsync(Message message, CancellationToken cancellationToken)

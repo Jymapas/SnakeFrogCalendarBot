@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using SnakeFrogCalendarBot.Worker.Config;
 
@@ -11,8 +12,8 @@ public static class DeployEndpoints
 {
     public static async Task<IResult> Handle(
         HttpRequest request,
-        AppOptions options,
-        ILogger<Program> logger,
+        [FromServices] AppOptions options,
+        [FromServices] ILogger<Program> logger,
         CancellationToken cancellationToken)
     {
         var userId = TelegramInitDataValidator.Validate(request, options);
