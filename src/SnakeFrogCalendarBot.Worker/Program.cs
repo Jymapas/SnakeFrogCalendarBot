@@ -68,6 +68,7 @@ try
 {
     await EnsurePostgresRunningAsync();
 
+    const string corsPolicyName = "MiniApp";
     var builder = WebApplication.CreateBuilder(args);
     builder.Host.UseSerilog();
     builder.WebHost.UseUrls("http://*:8080");
@@ -78,7 +79,7 @@ try
         services.AddSingleton(options);
 
         var miniAppOrigin = options.MiniAppAllowedOrigin;
-        services.AddCors(cors => cors.AddDefaultPolicy(policy =>
+        services.AddCors(cors => cors.AddPolicy(corsPolicyName, policy =>
         {
             if (!string.IsNullOrWhiteSpace(miniAppOrigin))
                 policy.WithOrigins(miniAppOrigin).AllowAnyHeader().AllowAnyMethod();
@@ -215,10 +216,10 @@ try
     }
 
     var app = builder.Build();
-    app.UseCors();
-    app.MapPost("/api/events", EventsEndpoints.Handle);
-    app.MapPost("/api/birthdays", BirthdaysEndpoints.Handle);
-    app.MapPost("/api/deploy", DeployEndpoints.Handle);
+    app.UseCors(corsPolicyName);
+    app.MapPost("/api/events", EventsEndpoints.Handle).RequireCors(corsPolicyName);
+    app.MapPost("/api/birthdays", BirthdaysEndpoints.Handle).RequireCors(corsPolicyName);
+    app.MapPost("/api/deploy", DeployEndpoints.Handle).RequireCors(corsPolicyName);
 
     var host = app;
 
