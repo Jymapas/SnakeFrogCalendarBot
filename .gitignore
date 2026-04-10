@@ -63,3 +63,4 @@ nunit-*.xml
 .DS_Store
 mini-app/.env.development
 mini-app/.env.production
+docs

@@ -19,6 +19,8 @@ jobs:
           cache-dependency-path: mini-app/package-lock.json
 
       - name: Build
+        env:
+          VITE_API_URL: ${{ secrets.VITE_API_URL }}
         run: |
           cd mini-app
           npm ci
