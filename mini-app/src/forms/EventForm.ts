@@ -56,7 +56,7 @@ export function renderEventForm(container: HTMLElement): void {
         <label>Дата *</label>
         <div class="date-picker-wrapper">
           <div class="date-display" id="date-display">${formatDateDisplay(today)}</div>
-          <input id="date" type="date" value="${today}" />
+          <input id="date" type="date" value="${today}" tabindex="-1" />
         </div>
       </div>
 
@@ -101,6 +101,13 @@ export function renderEventForm(container: HTMLElement): void {
 
   const dateInput = document.getElementById('date') as HTMLInputElement
   const dateDisplay = document.getElementById('date-display') as HTMLElement
+  dateDisplay.addEventListener('click', () => {
+    try {
+      dateInput.showPicker()
+    } catch {
+      dateInput.click()
+    }
+  })
   dateInput.addEventListener('change', () => {
     dateDisplay.textContent = formatDateDisplay(dateInput.value)
   })
