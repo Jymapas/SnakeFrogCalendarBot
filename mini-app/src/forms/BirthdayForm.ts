@@ -66,7 +66,7 @@ export function renderBirthdayForm(container: HTMLElement): void {
 
   // BackButton
   tg?.BackButton.show()
-  tg?.BackButton.onClick(() => history.back())
+  tg?.BackButton.onClick(() => { window.location.href = window.location.pathname })
 
   async function submit(): Promise<void> {
     const personName = (document.getElementById('name') as HTMLInputElement).value.trim()
