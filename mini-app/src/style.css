@@ -115,7 +115,7 @@ select {
   cursor: pointer;
 }
 
-.select-day         { width: 80px; flex-shrink: 0; }
+.select-day         { width: 90px; flex-shrink: 0; }
 .select-month       { flex: 1; }
 .select-month-short { flex: 1; }
 .select-year        { width: 105px; flex-shrink: 0; }
@@ -126,6 +126,43 @@ select {
   font-size: 16px;
   flex-shrink: 0;
 }
+
+/* Native date picker with custom DD.MM.YYYY display */
+.date-picker-wrapper {
+  position: relative;
+}
+
+.date-display {
+  background: var(--tg-secondary-bg);
+  border: 1.5px solid transparent;
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 16px;
+  color: var(--tg-text);
+  width: 100%;
+  pointer-events: none;
+}
+
+.date-picker-wrapper input[type="date"] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+  padding: 0;
+  border-radius: 10px;
+}
+
+/* Time row (hour + minute selects) */
+.time-row {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.select-hour   { width: 80px; flex-shrink: 0; }
+.select-minute { width: 80px; flex-shrink: 0; }
 
 /* Fallback menu (when opened without ?form=) */
 .menu {
