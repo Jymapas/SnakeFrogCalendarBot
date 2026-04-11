@@ -149,12 +149,17 @@ select {
 
 .date-picker-wrapper input[type="date"] {
   position: absolute;
-  width: 0;
-  height: 0;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   opacity: 0;
-  pointer-events: none;
-  top: 0;
-  left: 0;
+  cursor: pointer;
+  border-radius: 10px;
+}
+
+.date-picker-wrapper input[type="date"]:focus + .date-display,
+.date-picker-wrapper:focus-within .date-display {
+  border-color: var(--tg-button);
 }
 
 /* Time row (hour + minute selects) */
