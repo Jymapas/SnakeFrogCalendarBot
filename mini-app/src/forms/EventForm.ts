@@ -9,19 +9,46 @@ interface CreateEventRequest {
   link: string | null
 }
 
-function buildDateString(dateVal: string, timeVal: string, isAllDay: boolean, isYearly: boolean): string {
-  if (isYearly) {
-    const [, m, d] = dateVal.split('-')
-    return `${d}.${m}`
+const MONTHS = [
+  'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
+  'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь',
+]
+
+function monthOptions(selected: number): string {
+  return MONTHS.map((name, i) => {
+    const val = i + 1
+    return `<option value="${val}"${val === selected ? ' selected' : ''}>${name}</option>`
+  }).join('')
+}
+
+function dayOptions(selected: number): string {
+  return Array.from({ length: 31 }, (_, i) => {
+    const val = i + 1
+    return `<option value="${val}"${val === selected ? ' selected' : ''}>${val}</option>`
+  }).join('')
+}
+
+function yearOptions(selected: number): string {
+  const options: string[] = []
+  for (let y = selected - 1; y <= selected + 5; y++) {
+    options.push(`<option value="${y}"${y === selected ? ' selected' : ''}>${y}</option>`)
   }
-  if (isAllDay) {
-    return dateVal
-  }
-  return `${dateVal} ${timeVal}`
+  return options.join('')
+}
+
+function buildDateString(day: string, month: string, year: string, timeVal: string, isAllDay: boolean, isYearly: boolean): string {
+  const dd = day.padStart(2, '0')
+  const mm = month.padStart(2, '0')
+  if (isYearly) return `${dd}.${mm}`
+  if (isAllDay) return `${year}-${mm}-${dd}`
+  return `${year}-${mm}-${dd} ${timeVal}`
 }
 
 export function renderEventForm(container: HTMLElement): void {
-  const today = new Date().toISOString().split('T')[0]
+  const now = new Date()
+  const curDay = now.getDate()
+  const curMonth = now.getMonth() + 1
+  const curYear = now.getFullYear()
   const tg = window.Telegram?.WebApp
 
   container.innerHTML = `
@@ -33,8 +60,20 @@ export function renderEventForm(container: HTMLElement): void {
       </div>
 
       <div class="field">
-        <label for="date">Дата *</label>
-        <input id="date" type="date" value="${today}" required />
+        <label>Дата *</label>
+        <div class="date-row">
+          <select id="day" class="select-day">
+            ${dayOptions(curDay)}
+          </select>
+          <span class="date-separator">.</span>
+          <select id="month" class="select-month-short">
+            ${monthOptions(curMonth)}
+          </select>
+          <span class="date-separator">.</span>
+          <select id="year" class="select-year">
+            ${yearOptions(curYear)}
+          </select>
+        </div>
       </div>
 
       <div class="field field-row">
@@ -76,11 +115,13 @@ export function renderEventForm(container: HTMLElement): void {
 
   // BackButton
   tg?.BackButton.show()
-  tg?.BackButton.onClick(() => history.back())
+  tg?.BackButton.onClick(() => { window.location.href = window.location.pathname })
 
   async function submit(): Promise<void> {
     const title = (document.getElementById('title') as HTMLInputElement).value.trim()
-    const dateVal = (document.getElementById('date') as HTMLInputElement).value
+    const day = (document.getElementById('day') as HTMLSelectElement).value
+    const month = (document.getElementById('month') as HTMLSelectElement).value
+    const year = (document.getElementById('year') as HTMLSelectElement).value
     const timeVal = (document.getElementById('time') as HTMLInputElement).value
     const isAllDay = (document.getElementById('allday') as HTMLInputElement).checked
     const isYearly = (document.getElementById('yearly') as HTMLInputElement).checked
@@ -89,13 +130,13 @@ export function renderEventForm(container: HTMLElement): void {
     const link = (document.getElementById('link') as HTMLInputElement).value.trim() || null
     const errorEl = document.getElementById('error')!
 
-    if (!title || !dateVal) {
+    if (!title) {
       errorEl.textContent = 'Заполните обязательные поля'
       errorEl.classList.remove('hidden')
       return
     }
 
-    const date = buildDateString(dateVal, timeVal, isAllDay, isYearly)
+    const date = buildDateString(day, month, year, timeVal, isAllDay, isYearly)
 
     tg?.MainButton.showProgress()
     tg?.MainButton.disable()

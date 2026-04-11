@@ -19,6 +19,8 @@ function main(): void {
   } else if (form === 'birthday') {
     renderBirthdayForm(container)
   } else {
+    tg?.BackButton.show()
+    tg?.BackButton.onClick(() => tg?.close())
     container.innerHTML = `
       <div class="menu">
         <h2>SnakeFrog Calendar</h2>

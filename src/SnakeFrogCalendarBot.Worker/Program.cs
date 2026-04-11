@@ -77,14 +77,6 @@ try
         var options = AppOptions.FromConfiguration(builder.Configuration);
         services.AddSingleton(options);
 
-        var miniAppOrigin = options.MiniAppAllowedOrigin;
-        services.AddCors(cors => cors.AddDefaultPolicy(policy =>
-        {
-            if (!string.IsNullOrWhiteSpace(miniAppOrigin))
-                policy.WithOrigins(miniAppOrigin).AllowAnyHeader().AllowAnyMethod();
-            else
-                policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod();
-        }));
 
             services.AddSingleton<AccessGuard>();
             services.AddSingleton<ITelegramBotClient>(new TelegramBotClient(options.TelegramBotToken));
@@ -215,7 +207,31 @@ try
     }
 
     var app = builder.Build();
-    app.UseCors();
+
+    app.Use(async (ctx, next) =>
+    {
+        var appOpts = ctx.RequestServices.GetRequiredService<AppOptions>();
+        var allowedOrigin = string.IsNullOrEmpty(appOpts.MiniAppAllowedOrigin) ? "*" : appOpts.MiniAppAllowedOrigin;
+        var origin = ctx.Request.Headers.Origin.FirstOrDefault() ?? string.Empty;
+
+        if (!string.IsNullOrEmpty(origin) &&
+            (allowedOrigin == "*" || origin == allowedOrigin))
+        {
+            ctx.Response.Headers.Append("Access-Control-Allow-Origin", allowedOrigin);
+            ctx.Response.Headers.Append("Access-Control-Allow-Headers", "Content-Type, Authorization");
+            ctx.Response.Headers.Append("Access-Control-Allow-Methods", "POST, OPTIONS");
+
+            if (HttpMethods.IsOptions(ctx.Request.Method))
+            {
+                ctx.Response.Headers.Append("Access-Control-Max-Age", "86400");
+                ctx.Response.StatusCode = 204;
+                return;
+            }
+        }
+
+        await next(ctx);
+    });
+
     app.MapPost("/api/events", EventsEndpoints.Handle);
     app.MapPost("/api/birthdays", BirthdaysEndpoints.Handle);
     app.MapPost("/api/deploy", DeployEndpoints.Handle);
