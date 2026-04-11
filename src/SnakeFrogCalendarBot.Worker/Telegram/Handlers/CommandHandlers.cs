@@ -542,7 +542,7 @@ public sealed class CommandHandlers
         await _botClient.SendMessage(
             message.Chat.Id,
             text,
-            replyMarkup: ReplyKeyboards.MainKeyboard(),
+            replyMarkup: ReplyKeyboards.MainKeyboard(_miniAppUrl),
             cancellationToken: cancellationToken);
 
         if (!string.IsNullOrWhiteSpace(_miniAppUrl))

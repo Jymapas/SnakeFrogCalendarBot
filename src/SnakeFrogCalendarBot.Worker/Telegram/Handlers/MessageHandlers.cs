@@ -1559,6 +1559,10 @@ public sealed class MessageHandlers
                     cancellationToken: cancellationToken);
                 return true;
 
+            case "↩️ Отмена":
+                command = BotCommands.Cancel;
+                break;
+
             case "❌ Скрыть клавиатуру":
                 await _botClient.SendMessage(
                     message.Chat.Id,
