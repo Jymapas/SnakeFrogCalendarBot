@@ -9,46 +9,39 @@ interface CreateEventRequest {
   link: string | null
 }
 
-const MONTHS = [
-  'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
-  'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь',
-]
-
-function monthOptions(selected: number): string {
-  return MONTHS.map((name, i) => {
-    const val = i + 1
-    return `<option value="${val}"${val === selected ? ' selected' : ''}>${name}</option>`
-  }).join('')
+function formatDateDisplay(isoValue: string): string {
+  if (!isoValue) return ''
+  const [y, m, d] = isoValue.split('-')
+  return `${d}.${m}.${y}`
 }
 
-function dayOptions(selected: number): string {
-  return Array.from({ length: 31 }, (_, i) => {
-    const val = i + 1
-    return `<option value="${val}"${val === selected ? ' selected' : ''}>${val}</option>`
-  }).join('')
-}
-
-function yearOptions(selected: number): string {
-  const options: string[] = []
-  for (let y = selected - 1; y <= selected + 5; y++) {
-    options.push(`<option value="${y}"${y === selected ? ' selected' : ''}>${y}</option>`)
+function buildDateString(dateVal: string, hour: string, minute: string, isAllDay: boolean, isYearly: boolean): string {
+  if (isYearly) {
+    const [, m, d] = dateVal.split('-')
+    return `${d}.${m}`
   }
-  return options.join('')
+  if (isAllDay) return dateVal
+  const hh = hour.padStart(2, '0')
+  const mm = minute.padStart(2, '0')
+  return `${dateVal} ${hh}:${mm}`
 }
 
-function buildDateString(day: string, month: string, year: string, timeVal: string, isAllDay: boolean, isYearly: boolean): string {
-  const dd = day.padStart(2, '0')
-  const mm = month.padStart(2, '0')
-  if (isYearly) return `${dd}.${mm}`
-  if (isAllDay) return `${year}-${mm}-${dd}`
-  return `${year}-${mm}-${dd} ${timeVal}`
+function hourOptions(selected: number): string {
+  return Array.from({ length: 24 }, (_, i) => {
+    const v = String(i).padStart(2, '0')
+    return `<option value="${i}"${i === selected ? ' selected' : ''}>${v}</option>`
+  }).join('')
+}
+
+function minuteOptions(selected: number): string {
+  return Array.from({ length: 60 }, (_, i) => {
+    const v = String(i).padStart(2, '0')
+    return `<option value="${i}"${i === selected ? ' selected' : ''}>${v}</option>`
+  }).join('')
 }
 
 export function renderEventForm(container: HTMLElement): void {
-  const now = new Date()
-  const curDay = now.getDate()
-  const curMonth = now.getMonth() + 1
-  const curYear = now.getFullYear()
+  const today = new Date().toISOString().split('T')[0]
   const tg = window.Telegram?.WebApp
 
   container.innerHTML = `
@@ -61,18 +54,9 @@ export function renderEventForm(container: HTMLElement): void {
 
       <div class="field">
         <label>Дата *</label>
-        <div class="date-row">
-          <select id="day" class="select-day">
-            ${dayOptions(curDay)}
-          </select>
-          <span class="date-separator">.</span>
-          <select id="month" class="select-month-short">
-            ${monthOptions(curMonth)}
-          </select>
-          <span class="date-separator">.</span>
-          <select id="year" class="select-year">
-            ${yearOptions(curYear)}
-          </select>
+        <div class="date-picker-wrapper">
+          <div class="date-display" id="date-display">${formatDateDisplay(today)}</div>
+          <input id="date" type="date" value="${today}" tabindex="-1" />
         </div>
       </div>
 
@@ -82,8 +66,16 @@ export function renderEventForm(container: HTMLElement): void {
       </div>
 
       <div class="field" id="time-field">
-        <label for="time">Время</label>
-        <input id="time" type="time" value="12:00" />
+        <label>Время</label>
+        <div class="time-row">
+          <select id="hour" class="select-hour">
+            ${hourOptions(12)}
+          </select>
+          <span class="date-separator">:</span>
+          <select id="minute" class="select-minute">
+            ${minuteOptions(0)}
+          </select>
+        </div>
       </div>
 
       <div class="field field-row">
@@ -107,6 +99,19 @@ export function renderEventForm(container: HTMLElement): void {
     </form>
   `
 
+  const dateInput = document.getElementById('date') as HTMLInputElement
+  const dateDisplay = document.getElementById('date-display') as HTMLElement
+  dateDisplay.addEventListener('click', () => {
+    try {
+      dateInput.showPicker()
+    } catch {
+      dateInput.click()
+    }
+  })
+  dateInput.addEventListener('change', () => {
+    dateDisplay.textContent = formatDateDisplay(dateInput.value)
+  })
+
   const alldayEl = document.getElementById('allday') as HTMLInputElement
   const timeField = document.getElementById('time-field') as HTMLElement
   alldayEl.addEventListener('change', () => {
@@ -119,10 +124,9 @@ export function renderEventForm(container: HTMLElement): void {
 
   async function submit(): Promise<void> {
     const title = (document.getElementById('title') as HTMLInputElement).value.trim()
-    const day = (document.getElementById('day') as HTMLSelectElement).value
-    const month = (document.getElementById('month') as HTMLSelectElement).value
-    const year = (document.getElementById('year') as HTMLSelectElement).value
-    const timeVal = (document.getElementById('time') as HTMLInputElement).value
+    const dateVal = (document.getElementById('date') as HTMLInputElement).value
+    const hour = (document.getElementById('hour') as HTMLSelectElement).value
+    const minute = (document.getElementById('minute') as HTMLSelectElement).value
     const isAllDay = (document.getElementById('allday') as HTMLInputElement).checked
     const isYearly = (document.getElementById('yearly') as HTMLInputElement).checked
     const description = (document.getElementById('description') as HTMLTextAreaElement).value.trim() || null
@@ -130,13 +134,13 @@ export function renderEventForm(container: HTMLElement): void {
     const link = (document.getElementById('link') as HTMLInputElement).value.trim() || null
     const errorEl = document.getElementById('error')!
 
-    if (!title) {
+    if (!title || !dateVal) {
       errorEl.textContent = 'Заполните обязательные поля'
       errorEl.classList.remove('hidden')
       return
     }
 
-    const date = buildDateString(day, month, year, timeVal, isAllDay, isYearly)
+    const date = buildDateString(dateVal, hour, minute, isAllDay, isYearly)
 
     tg?.MainButton.showProgress()
     tg?.MainButton.disable()
