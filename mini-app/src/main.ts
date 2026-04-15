@@ -13,8 +13,10 @@ function main(): void {
 
   const container = document.getElementById('app')!
 
-  // Debug: show initData state if empty
-  if (!tg?.initData) {
+  const hasToken = new URLSearchParams(window.location.search).has('token')
+
+  // Debug: show initData state if empty and no token in URL
+  if (!tg?.initData && !hasToken) {
     container.innerHTML = `
       <div style="padding:16px;font-family:monospace;font-size:13px">
         <b style="color:red">⚠ initData пустой</b><br><br>
