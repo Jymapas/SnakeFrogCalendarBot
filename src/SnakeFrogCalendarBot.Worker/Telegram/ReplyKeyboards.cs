@@ -1,4 +1,3 @@
-using Telegram.Bot.Types;
 using Telegram.Bot.Types.ReplyMarkups;
 
 namespace SnakeFrogCalendarBot.Worker.Telegram;
@@ -7,21 +6,13 @@ public static class ReplyKeyboards
 {
     public static ReplyKeyboardMarkup MainKeyboard(string? miniAppUrl = null)
     {
-        KeyboardButton[] addRow = string.IsNullOrWhiteSpace(miniAppUrl)
-            ? new[]
+        return new ReplyKeyboardMarkup(new[]
+        {
+            new[]
             {
                 new KeyboardButton("➕ Событие"),
                 new KeyboardButton("➕ День рождения")
-            }
-            : new[]
-            {
-                KeyboardButton.WithWebApp("➕ Событие", new WebAppInfo { Url = $"{miniAppUrl}?form=event" }),
-                KeyboardButton.WithWebApp("➕ День рождения", new WebAppInfo { Url = $"{miniAppUrl}?form=birthday" })
-            };
-
-        return new ReplyKeyboardMarkup(new[]
-        {
-            addRow,
+            },
             new[]
             {
                 new KeyboardButton("📅 События"),

@@ -545,14 +545,6 @@ public sealed class CommandHandlers
             replyMarkup: ReplyKeyboards.MainKeyboard(_miniAppUrl),
             cancellationToken: cancellationToken);
 
-        if (!string.IsNullOrWhiteSpace(_miniAppUrl))
-        {
-            await _botClient.SendMessage(
-                message.Chat.Id,
-                "Быстрое добавление:",
-                replyMarkup: InlineKeyboards.MainMenu(_miniAppUrl),
-                cancellationToken: cancellationToken);
-        }
     }
 
     private async Task SendEventViewWeekFromCommandAsync(Message message, CancellationToken cancellationToken)

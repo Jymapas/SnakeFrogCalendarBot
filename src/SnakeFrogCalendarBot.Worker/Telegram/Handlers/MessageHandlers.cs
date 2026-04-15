@@ -9,6 +9,8 @@ using SnakeFrogCalendarBot.Application.UseCases.Birthdays;
 using SnakeFrogCalendarBot.Application.UseCases.Events;
 using SnakeFrogCalendarBot.Domain.Entities;
 using SnakeFrogCalendarBot.Domain.Enums;
+using SnakeFrogCalendarBot.Worker.Api;
+using SnakeFrogCalendarBot.Worker.Config;
 using SnakeFrogCalendarBot.Worker.Telegram.Handlers;
 using Telegram.Bot;
 using Telegram.Bot.Types;
@@ -40,6 +42,8 @@ public sealed class MessageHandlers
     private readonly IClock _clock;
     private readonly ITimeZoneProvider _timeZoneProvider;
     private readonly IServiceProvider _serviceProvider;
+    private readonly string _miniAppUrl;
+    private readonly MiniAppTokenService _tokenService;
 
     public MessageHandlers(
         ITelegramBotClient botClient,
@@ -56,7 +60,9 @@ public sealed class MessageHandlers
         IBirthdayRepository birthdayRepository,
         IClock clock,
         ITimeZoneProvider timeZoneProvider,
-        IServiceProvider serviceProvider)
+        IServiceProvider serviceProvider,
+        AppOptions appOptions,
+        MiniAppTokenService tokenService)
     {
         _botClient = botClient;
         _conversationRepository = conversationRepository;
@@ -73,6 +79,8 @@ public sealed class MessageHandlers
         _clock = clock;
         _timeZoneProvider = timeZoneProvider;
         _serviceProvider = serviceProvider;
+        _miniAppUrl = appOptions.MiniAppUrl;
+        _tokenService = tokenService;
     }
 
     public async Task HandleAsync(Message message, CancellationToken cancellationToken)
@@ -1509,10 +1517,34 @@ public sealed class MessageHandlers
         switch (text)
         {
             case "➕ Событие":
+                if (!string.IsNullOrWhiteSpace(_miniAppUrl) && message.From?.Id is { } evtUserId)
+                {
+                    var evtToken = _tokenService.Generate(evtUserId);
+                    await _botClient.SendMessage(
+                        message.Chat.Id,
+                        "Открой форму:",
+                        replyMarkup: new InlineKeyboardMarkup(
+                            new InlineKeyboardButton("📋 Добавить событие")
+                            { WebApp = new WebAppInfo { Url = $"{_miniAppUrl}?form=event&token={evtToken}" } }),
+                        cancellationToken: cancellationToken);
+                    return true;
+                }
                 command = BotCommands.EventAdd;
                 break;
 
             case "➕ День рождения":
+                if (!string.IsNullOrWhiteSpace(_miniAppUrl) && message.From?.Id is { } bdUserId)
+                {
+                    var bdToken = _tokenService.Generate(bdUserId);
+                    await _botClient.SendMessage(
+                        message.Chat.Id,
+                        "Открой форму:",
+                        replyMarkup: new InlineKeyboardMarkup(
+                            new InlineKeyboardButton("🎂 Добавить день рождения")
+                            { WebApp = new WebAppInfo { Url = $"{_miniAppUrl}?form=birthday&token={bdToken}" } }),
+                        cancellationToken: cancellationToken);
+                    return true;
+                }
                 command = BotCommands.BirthdayAdd;
                 break;
 

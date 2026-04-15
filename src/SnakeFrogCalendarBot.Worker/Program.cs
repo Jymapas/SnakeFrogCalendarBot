@@ -83,6 +83,7 @@ try
             services.AddSingleton<IPinnedMessageCleanupRegistry, PinnedMessageCleanupRegistry>();
             services.AddSingleton<PinnedServiceMessageCleaner>();
             services.AddSingleton<UpdateDispatcher>();
+            services.AddSingleton<MiniAppTokenService>();
             services.AddScoped<CommandHandlers>();
             services.AddScoped<MessageHandlers>();
             services.AddScoped<CallbackHandlers>(sp =>
