@@ -5,11 +5,16 @@ function getInitData(): string {
 }
 
 export async function apiPost<T>(path: string, body: T): Promise<void> {
+  const initData = getInitData()
+  if (!initData) {
+    throw new Error('Открой приложение через кнопку в Telegram')
+  }
+
   const res = await fetch(`${API_URL}${path}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `tma ${getInitData()}`,
+      'Authorization': `tma ${initData}`,
     },
     body: JSON.stringify(body),
   })

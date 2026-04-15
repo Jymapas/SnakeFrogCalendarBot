@@ -12,6 +12,22 @@ function main(): void {
   tg?.expand()
 
   const container = document.getElementById('app')!
+
+  // Debug: show initData state if empty
+  if (!tg?.initData) {
+    container.innerHTML = `
+      <div style="padding:16px;font-family:monospace;font-size:13px">
+        <b style="color:red">⚠ initData пустой</b><br><br>
+        Telegram defined: ${window.Telegram !== undefined}<br>
+        WebApp defined: ${window.Telegram?.WebApp !== undefined}<br>
+        platform: ${tg?.platform ?? 'n/a'}<br>
+        version: ${tg?.version ?? 'n/a'}<br>
+        initData: "${tg?.initData ?? 'undefined'}"<br>
+      </div>
+    `
+    return
+  }
+
   const form = getFormParam()
 
   if (form === 'event') {
