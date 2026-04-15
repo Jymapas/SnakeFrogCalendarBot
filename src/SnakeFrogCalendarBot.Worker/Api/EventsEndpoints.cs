@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using NodaTime;
 using SnakeFrogCalendarBot.Application.Abstractions.Parsing;
 using SnakeFrogCalendarBot.Application.Abstractions.Time;
@@ -19,9 +20,12 @@ public static class EventsEndpoints
         [FromServices] IBirthdayDateParser birthdayDateParser,
         [FromServices] ITimeZoneProvider timeZoneProvider,
         [FromServices] CreateEvent createEvent,
+        [FromServices] MiniAppTokenService tokenService,
+        [FromServices] ILoggerFactory loggerFactory,
         CancellationToken cancellationToken)
     {
-        var userId = TelegramInitDataValidator.Validate(request, options);
+        var logger = loggerFactory.CreateLogger("EventsEndpoint");
+        var userId = TelegramInitDataValidator.Validate(request, options, tokenService, logger);
         if (userId is null)
             return Results.Unauthorized();
 

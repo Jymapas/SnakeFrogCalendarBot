@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
 using SnakeFrogCalendarBot.Worker.Config;
 
 namespace SnakeFrogCalendarBot.Worker.Api;
@@ -14,15 +15,33 @@ public static class TelegramInitDataValidator
     /// Validates the Telegram initData from the Authorization header.
     /// Returns the Telegram user ID on success, or null on failure.
     /// </summary>
-    public static long? Validate(HttpRequest request, AppOptions options)
+    public static long? Validate(HttpRequest request, AppOptions options, MiniAppTokenService tokenService, ILogger logger)
     {
         var authHeader = request.Headers.Authorization.FirstOrDefault();
+
+        // Bot-generated one-time token (works on all platforms including tdesktop)
+        if (authHeader?.StartsWith("token ", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            var raw = authHeader["token ".Length..].Trim();
+            var userId = tokenService.Consume(raw);
+            if (userId is null)
+                logger.LogWarning("Token validation failed: invalid or expired token");
+            return userId;
+        }
+
         if (authHeader is null || !authHeader.StartsWith("tma ", StringComparison.OrdinalIgnoreCase))
+        {
+            logger.LogWarning("TMA validation failed: missing or invalid Authorization header. Value: {Value}",
+                authHeader ?? "<null>");
             return null;
+        }
 
         var initData = authHeader["tma ".Length..].Trim();
         if (string.IsNullOrEmpty(initData))
+        {
+            logger.LogWarning("TMA validation failed: initData is empty");
             return null;
+        }
 
         // Parse raw pairs WITHOUT URL-decoding: Telegram computes the HMAC over
         // the raw URL-encoded values (e.g. user=%7B%22id%22%3A1%7D, not user={"id":1}).
@@ -51,7 +70,11 @@ public static class TelegramInitDataValidator
         }
 
         if (string.IsNullOrEmpty(hash))
+        {
+            logger.LogWarning("TMA validation failed: hash field missing from initData. Keys present: {Keys}",
+                string.Join(", ", dataPairs.Select(p => p.Split('=')[0])));
             return null;
+        }
 
         // Build data-check-string: raw pairs sorted alphabetically, joined with \n
         dataPairs.Sort(StringComparer.Ordinal);
@@ -69,29 +92,45 @@ public static class TelegramInitDataValidator
 
         var calculatedHex = Convert.ToHexString(calculated).ToLowerInvariant();
         if (!string.Equals(calculatedHex, hash, StringComparison.OrdinalIgnoreCase))
+        {
+            logger.LogWarning("TMA validation failed: hash mismatch. Expected={Expected}, Got={Got}. DataCheckString={Dcs}",
+                calculatedHex, hash, dataCheckString);
             return null;
+        }
 
         // Check auth_date freshness
         if (!long.TryParse(rawAuthDate, out var authDate))
+        {
+            logger.LogWarning("TMA validation failed: cannot parse auth_date={RawAuthDate}", rawAuthDate);
             return null;
+        }
 
         var authDateUtc = DateTimeOffset.FromUnixTimeSeconds(authDate);
-        if (DateTimeOffset.UtcNow - authDateUtc > MaxAge)
+        var age = DateTimeOffset.UtcNow - authDateUtc;
+        if (age > MaxAge)
+        {
+            logger.LogWarning("TMA validation failed: initData is stale. Age={Age}, MaxAge={MaxAge}", age, MaxAge);
             return null;
+        }
 
         // Extract user id from URL-decoded user JSON
         if (string.IsNullOrEmpty(rawUserJson))
+        {
+            logger.LogWarning("TMA validation failed: user field missing from initData");
             return null;
+        }
 
         try
         {
             using var doc = JsonDocument.Parse(rawUserJson);
             if (doc.RootElement.TryGetProperty("id", out var idProp) && idProp.TryGetInt64(out var userId))
                 return userId;
+
+            logger.LogWarning("TMA validation failed: could not extract user.id from JSON={Json}", rawUserJson);
         }
-        catch (JsonException)
+        catch (JsonException ex)
         {
-            return null;
+            logger.LogWarning(ex, "TMA validation failed: invalid user JSON={Json}", rawUserJson);
         }
 
         return null;

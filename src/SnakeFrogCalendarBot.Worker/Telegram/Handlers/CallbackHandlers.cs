@@ -968,7 +968,7 @@ public sealed class CallbackHandlers
         switch (menuType)
         {
             case "main":
-                keyboard = InlineKeyboards.MainMenu(_miniAppUrl);
+                keyboard = InlineKeyboards.MainMenu();
                 text = "Выберите действие:";
                 break;
             case "events":

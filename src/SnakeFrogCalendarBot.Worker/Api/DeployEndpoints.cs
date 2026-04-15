@@ -13,10 +13,11 @@ public static class DeployEndpoints
     public static async Task<IResult> Handle(
         HttpRequest request,
         [FromServices] AppOptions options,
+        [FromServices] MiniAppTokenService tokenService,
         [FromServices] ILogger<Program> logger,
         CancellationToken cancellationToken)
     {
-        var userId = TelegramInitDataValidator.Validate(request, options);
+        var userId = TelegramInitDataValidator.Validate(request, options, tokenService, logger);
         if (userId is null)
             return Results.Unauthorized();
 
