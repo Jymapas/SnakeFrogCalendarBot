@@ -64,3 +64,4 @@ nunit-*.xml
 mini-app/.env.development
 mini-app/.env.production
 docs
+deploy/*.md
