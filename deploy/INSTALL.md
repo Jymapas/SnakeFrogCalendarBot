@@ -150,6 +150,55 @@ sudo systemctl start snakefrogcalendarbot
 - `./redeploy.sh /opt/SnakeFrogCalendarBot` - указать путь к проекту
 - `./redeploy.sh /opt/SnakeFrogCalendarBot snakefrogcalendarbot:latest` - указать путь и имя образа
 
+## Бэкапы базы данных
+
+Скрипт `deploy/backup.sh` создаёт сжатый дамп PostgreSQL через `pg_dump` внутри Docker-контейнера.
+
+### Ручной запуск
+
+```bash
+cd /opt/SnakeFrogCalendarBot
+bash deploy/backup.sh
+```
+
+Дамп сохраняется в `backups/snakefrog_YYYYMMDD_HHMMSS.dump.gz`.
+По умолчанию хранится 7 последних дней. Настраивается переменными окружения:
+```env
+BACKUP_DIR=/opt/SnakeFrogCalendarBot/backups
+KEEP_DAYS=7
+```
+
+### Восстановление из дампа
+
+```bash
+# Разархивировать и восстановить
+gunzip -c backups/snakefrog_20260704_090000.dump.gz \
+  | docker compose exec -T postgres \
+      pg_restore \
+        --username="${POSTGRES_USER}" \
+        --dbname="${POSTGRES_DB}" \
+        --clean --if-exists
+```
+
+### Автоматический бэкап через cron
+
+```bash
+# Открыть crontab
+crontab -e
+```
+
+Добавить строку (ежедневно в 03:00):
+```
+0 3 * * * /opt/SnakeFrogCalendarBot/deploy/backup.sh /opt/SnakeFrogCalendarBot >> /opt/SnakeFrogCalendarBot/logs/backup.log 2>&1
+```
+
+Проверить, что cron работает:
+```bash
+# Запустить вручную и убедиться в появлении файла
+bash deploy/backup.sh
+ls -lh backups/
+```
+
 ## Диагностика проблем
 
 ### Проблема: PostgreSQL не запускается
