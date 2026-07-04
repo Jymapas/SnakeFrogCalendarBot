@@ -144,7 +144,7 @@ public sealed class CommandHandlers
                 break;
             default:
                 var availableCommands = string.Join(", ", BotCommands.All);
-                await _botClient.SendMessage(
+                await _botClient.SendNoPreview(
                     message.Chat.Id,
                     $"Неизвестная команда. Доступные: {availableCommands}",
                     cancellationToken: cancellationToken);
@@ -177,7 +177,7 @@ public sealed class CommandHandlers
 
                 await _createBirthday.ExecuteAsync(command, cancellationToken);
 
-                await _botClient.SendMessage(
+                await _botClient.SendNoPreview(
                     message.Chat.Id,
                     "Сохранено",
                     cancellationToken: cancellationToken);
@@ -194,7 +194,7 @@ public sealed class CommandHandlers
             now);
 
         await _conversationRepository.UpsertAsync(state, cancellationToken);
-        await _botClient.SendMessage(
+        await _botClient.SendNoPreview(
             message.Chat.Id,
             "Введите имя\n\nИли отправьте многострочное сообщение:\nИмя\nдд MMMM [YYYY]\n[контакт]",
             cancellationToken: cancellationToken);
@@ -295,7 +295,7 @@ public sealed class CommandHandlers
     private async Task SendBirthdayListAsync(Message message, CancellationToken cancellationToken)
     {
         // Показываем выбор месяца вместо полного списка
-        await _botClient.SendMessage(
+        await _botClient.SendNoPreview(
             message.Chat.Id,
             "Выберите месяц:",
             replyMarkup: InlineKeyboards.MonthSelectionKeyboard(),
@@ -308,14 +308,14 @@ public sealed class CommandHandlers
         
         if (birthdays.Count == 0)
         {
-            await _botClient.SendMessage(
+            await _botClient.SendNoPreview(
                 message.Chat.Id,
                 "Дней рождения пока нет",
                 cancellationToken: cancellationToken);
             return;
         }
 
-        await _botClient.SendMessage(
+        await _botClient.SendNoPreview(
             message.Chat.Id,
             "Выберите месяц для редактирования дня рождения:",
             replyMarkup: InlineKeyboards.MonthSelectionKeyboardForEdit(),
@@ -324,7 +324,7 @@ public sealed class CommandHandlers
 
     private async Task SendBirthdayListForDeleteAsync(Message message, CancellationToken cancellationToken)
     {
-        await _botClient.SendMessage(
+        await _botClient.SendNoPreview(
             message.Chat.Id,
             "Выберите месяц для удаления дня рождения:",
             replyMarkup: InlineKeyboards.MonthSelectionKeyboardForDelete(),
@@ -348,7 +348,7 @@ public sealed class CommandHandlers
             now);
 
         await _conversationRepository.UpsertAsync(state, cancellationToken);
-        await _botClient.SendMessage(
+        await _botClient.SendNoPreview(
             message.Chat.Id,
             "Введите название события\n\nИли отправьте многострочное сообщение:\nНазвание\nдата/время [разовое|ежегодное]\n[описание]\n[место]\n[ссылка]\n\nМожно использовать маркеры: место:, ссылка:, описание:\nСсылки определяются автоматически",
             cancellationToken: cancellationToken);
@@ -360,14 +360,14 @@ public sealed class CommandHandlers
         
         if (events.Count == 0)
         {
-            await _botClient.SendMessage(
+            await _botClient.SendNoPreview(
                 message.Chat.Id,
                 "Предстоящих событий нет",
                 cancellationToken: cancellationToken);
             return;
         }
 
-        await _botClient.SendMessage(
+        await _botClient.SendNoPreview(
             message.Chat.Id,
             "Выберите месяц для просмотра событий:",
             replyMarkup: InlineKeyboards.EventMonthSelectionKeyboardForList(),
@@ -408,14 +408,14 @@ public sealed class CommandHandlers
         
         if (events.Count == 0)
         {
-            await _botClient.SendMessage(
+            await _botClient.SendNoPreview(
                 message.Chat.Id,
                 "Событий пока нет",
                 cancellationToken: cancellationToken);
             return;
         }
 
-        await _botClient.SendMessage(
+        await _botClient.SendNoPreview(
             message.Chat.Id,
             "Выберите месяц для редактирования события:",
             replyMarkup: InlineKeyboards.EventMonthSelectionKeyboardForEdit(),
@@ -424,7 +424,7 @@ public sealed class CommandHandlers
 
     private async Task SendEventListForDeleteAsync(Message message, CancellationToken cancellationToken)
     {
-        await _botClient.SendMessage(
+        await _botClient.SendNoPreview(
             message.Chat.Id,
             "Выберите месяц для удаления события:",
             replyMarkup: InlineKeyboards.EventMonthSelectionKeyboardForDelete(),
@@ -440,7 +440,7 @@ public sealed class CommandHandlers
         }
 
         await _conversationRepository.DeleteAsync(userId.Value, cancellationToken);
-        await _botClient.SendMessage(
+        await _botClient.SendNoPreview(
             message.Chat.Id,
             "Действие отменено",
             cancellationToken: cancellationToken);
@@ -451,7 +451,7 @@ public sealed class CommandHandlers
         var parts = message.Text?.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (parts is null || parts.Length < 2)
         {
-            await _botClient.SendMessage(
+            await _botClient.SendNoPreview(
                 message.Chat.Id,
                 "Использование: /digest_test daily|weekly|monthly",
                 cancellationToken: cancellationToken);
@@ -481,21 +481,21 @@ public sealed class CommandHandlers
                     break;
 
                 default:
-                    await _botClient.SendMessage(
+                    await _botClient.SendNoPreview(
                         message.Chat.Id,
                         "Неизвестный тип дайджеста. Используйте: daily, weekly или monthly",
                         cancellationToken: cancellationToken);
                     return;
             }
 
-            await _botClient.SendMessage(
+            await _botClient.SendNoPreview(
                 message.Chat.Id,
                 digestText,
                 cancellationToken: cancellationToken);
         }
         catch (Exception ex)
         {
-            await _botClient.SendMessage(
+            await _botClient.SendNoPreview(
                 message.Chat.Id,
                 $"Ошибка при формировании дайджеста: {ex.Message}",
                 cancellationToken: cancellationToken);
@@ -513,7 +513,7 @@ public sealed class CommandHandlers
         if (!string.IsNullOrWhiteSpace(_miniAppUrl) && message.From?.Id is { } userId)
             token = _tokenService.GetOrCreatePersistent(userId);
 
-        await _botClient.SendMessage(
+        await _botClient.SendNoPreview(
             message.Chat.Id,
             text,
             replyMarkup: ReplyKeyboards.MainKeyboard(_miniAppUrl, token),

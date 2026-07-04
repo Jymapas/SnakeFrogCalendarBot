@@ -228,7 +228,7 @@ public sealed class CallbackHandlers
             await _botClient.AnswerCallbackQuery(
                 callbackQuery.Id,
                 cancellationToken: cancellationToken);
-            await _botClient.SendMessage(
+            await _botClient.SendNoPreview(
                 callbackQuery.Message!.Chat.Id,
                 "Готово. Все файлы прикреплены.",
                 cancellationToken: cancellationToken);
@@ -329,7 +329,7 @@ public sealed class CallbackHandlers
 
             if (failedFiles.Count > 0)
             {
-                await _botClient.SendMessage(
+                await _botClient.SendNoPreview(
                     callbackQuery.Message!.Chat.Id,
                     $"Ошибка при отправке файлов:\n{string.Join("\n", failedFiles)}",
                     cancellationToken: cancellationToken);
@@ -388,7 +388,7 @@ public sealed class CallbackHandlers
                     ? $"Отправьте файл для добавления к событию (уже прикреплено файлов: {eventWithAttachment.Attachments.Count}). Можно отправить несколько, затем нажмите «Готово»."
                     : "Отправьте файл, который нужно прикрепить к событию. Можно отправить несколько, затем нажмите «Готово».";
 
-            await _botClient.SendMessage(
+            await _botClient.SendNoPreview(
                 callbackQuery.Message!.Chat.Id,
                 messageText,
                 replyMarkup: isReplace
@@ -455,7 +455,7 @@ public sealed class CallbackHandlers
         await _botClient.AnswerCallbackQuery(
             callbackQuery.Id,
             cancellationToken: cancellationToken);
-        await _botClient.SendMessage(
+        await _botClient.SendNoPreview(
             callbackQuery.Message!.Chat.Id,
             "Действие отменено",
             cancellationToken: cancellationToken);
@@ -519,7 +519,7 @@ public sealed class CallbackHandlers
             InlineKeyboardButton.WithCallbackData("✏️ Редактировать", $"event_edit:{eventId}")
         });
 
-        await _botClient.SendMessage(
+        await _botClient.SendNoPreview(
             callbackQuery.Message!.Chat.Id,
             text,
             replyMarkup: new InlineKeyboardMarkup(buttons),
@@ -633,7 +633,7 @@ public sealed class CallbackHandlers
         var keyboard = CreateEventEditKeyboard(eventId);
         var text = $"Редактирование события: {eventEntity.Title}\n\nВыберите поле для редактирования:";
 
-        await _botClient.SendMessage(
+        await _botClient.SendNoPreview(
             callbackQuery.Message!.Chat.Id,
             text,
             replyMarkup: keyboard,
@@ -695,7 +695,7 @@ public sealed class CallbackHandlers
             keyboard = CreateSkipKeyboardForEdit(ConversationNames.EventEdit, $"{field}:{eventId}");
         }
 
-        await _botClient.SendMessage(
+        await _botClient.SendNoPreview(
             callbackQuery.Message!.Chat.Id,
             messageText,
             replyMarkup: keyboard,
@@ -737,7 +737,7 @@ public sealed class CallbackHandlers
             }
         });
 
-        await _botClient.SendMessage(
+        await _botClient.SendNoPreview(
             callbackQuery.Message!.Chat.Id,
             $"Вы действительно хотите удалить событие «{eventEntity.Title}»?",
             replyMarkup: keyboard,
@@ -773,7 +773,7 @@ public sealed class CallbackHandlers
         var keyboard = CreateBirthdayEditKeyboard(birthdayId);
         var text = $"Редактирование дня рождения: {birthday.PersonName}\n\nВыберите поле для редактирования:";
 
-        await _botClient.SendMessage(
+        await _botClient.SendNoPreview(
             callbackQuery.Message!.Chat.Id,
             text,
             replyMarkup: keyboard,
@@ -832,7 +832,7 @@ public sealed class CallbackHandlers
             keyboard = CreateSkipKeyboardForEdit(ConversationNames.BirthdayEdit, $"{field}:{birthdayId}");
         }
 
-        await _botClient.SendMessage(
+        await _botClient.SendNoPreview(
             callbackQuery.Message!.Chat.Id,
             messageText,
             replyMarkup: keyboard,
@@ -874,7 +874,7 @@ public sealed class CallbackHandlers
             }
         });
 
-        await _botClient.SendMessage(
+        await _botClient.SendNoPreview(
             callbackQuery.Message!.Chat.Id,
             $"Вы действительно хотите удалить день рождения «{birthday.PersonName}»?",
             replyMarkup: keyboard,
@@ -890,7 +890,7 @@ public sealed class CallbackHandlers
         var parts = callbackQuery.Data!.Split(':');
         if (parts.Length < 3)
         {
-            await _botClient.SendMessage(
+            await _botClient.SendNoPreview(
                 callbackQuery.Message!.Chat.Id,
                 "Ошибка: неверный формат данных",
                 cancellationToken: cancellationToken);
@@ -900,7 +900,7 @@ public sealed class CallbackHandlers
         var entityType = parts[1];
         if (!int.TryParse(parts[2], out var entityId))
         {
-            await _botClient.SendMessage(
+            await _botClient.SendNoPreview(
                 callbackQuery.Message!.Chat.Id,
                 "Ошибка: неверный идентификатор",
                 cancellationToken: cancellationToken);
@@ -912,7 +912,7 @@ public sealed class CallbackHandlers
             if (entityType == "event")
             {
                 await _deleteEvent.ExecuteAsync(entityId, cancellationToken);
-                await _botClient.SendMessage(
+                await _botClient.SendNoPreview(
                     callbackQuery.Message!.Chat.Id,
                     "Событие удалено",
                     cancellationToken: cancellationToken);
@@ -920,7 +920,7 @@ public sealed class CallbackHandlers
             else if (entityType == "birthday")
             {
                 await _deleteBirthday.ExecuteAsync(entityId, cancellationToken);
-                await _botClient.SendMessage(
+                await _botClient.SendNoPreview(
                     callbackQuery.Message!.Chat.Id,
                     "День рождения удалён",
                     cancellationToken: cancellationToken);
@@ -928,14 +928,14 @@ public sealed class CallbackHandlers
         }
         catch (InvalidOperationException ex)
         {
-            await _botClient.SendMessage(
+            await _botClient.SendNoPreview(
                 callbackQuery.Message!.Chat.Id,
                 $"Ошибка: {ex.Message}",
                 cancellationToken: cancellationToken);
         }
         catch (Exception)
         {
-            await _botClient.SendMessage(
+            await _botClient.SendNoPreview(
                 callbackQuery.Message!.Chat.Id,
                 "Произошла ошибка при удалении. Попробуйте позже.",
                 cancellationToken: cancellationToken);
@@ -1011,7 +1011,7 @@ public sealed class CallbackHandlers
 
         if (callbackQuery.Message is not null)
         {
-            await _botClient.EditMessageText(
+            await _botClient.EditNoPreview(
                 callbackQuery.Message.Chat.Id,
                 callbackQuery.Message.MessageId,
                 text,
@@ -1020,7 +1020,7 @@ public sealed class CallbackHandlers
         }
         else
         {
-            await _botClient.SendMessage(
+            await _botClient.SendNoPreview(
                 callbackQuery.From!.Id,
                 text,
                 replyMarkup: keyboard,
@@ -1111,7 +1111,7 @@ public sealed class CallbackHandlers
         var parts = data.Split(':');
         if (parts.Length < 2 || !int.TryParse(parts[1], out var month) || month < 1 || month > 12)
         {
-            await _botClient.SendMessage(
+            await _botClient.SendNoPreview(
                 callbackQuery.Message?.Chat.Id ?? callbackQuery.From!.Id,
                 "Ошибка: неверный номер месяца",
                 cancellationToken: cancellationToken);
@@ -1130,7 +1130,7 @@ public sealed class CallbackHandlers
             ? $"Дней рождения в {monthName} нет"
             : $"Дни рождения в {monthName}:\n\n{_birthdayFormatter.Format(monthBirthdays)}";
 
-        await _botClient.SendMessage(
+        await _botClient.SendNoPreview(
             callbackQuery.Message?.Chat.Id ?? callbackQuery.From!.Id,
             text,
             cancellationToken: cancellationToken);
@@ -1145,7 +1145,7 @@ public sealed class CallbackHandlers
         var parts = data.Split(':');
         if (parts.Length < 2 || !int.TryParse(parts[1], out var month) || month < 1 || month > 12)
         {
-            await _botClient.SendMessage(
+            await _botClient.SendNoPreview(
                 callbackQuery.Message?.Chat.Id ?? callbackQuery.From!.Id,
                 "Ошибка: неверный номер месяца",
                 cancellationToken: cancellationToken);
@@ -1165,7 +1165,7 @@ public sealed class CallbackHandlers
         if (parts.Length < 3 || !int.TryParse(parts[1], out var month) || month < 1 || month > 12 ||
             !int.TryParse(parts[2], out var page) || page < 0)
         {
-            await _botClient.SendMessage(
+            await _botClient.SendNoPreview(
                 callbackQuery.Message?.Chat.Id ?? callbackQuery.From!.Id,
                 "Ошибка: неверный формат данных",
                 cancellationToken: cancellationToken);
@@ -1189,7 +1189,7 @@ public sealed class CallbackHandlers
 
         if (monthBirthdays.Count == 0)
         {
-            await _botClient.SendMessage(
+            await _botClient.SendNoPreview(
                 chatId,
                 $"Дней рождения в {monthName} нет",
                 cancellationToken: cancellationToken);
@@ -1240,7 +1240,7 @@ public sealed class CallbackHandlers
 
         if (messageId.HasValue)
         {
-            await _botClient.EditMessageText(
+            await _botClient.EditNoPreview(
                 chatId,
                 messageId.Value,
                 text,
@@ -1249,7 +1249,7 @@ public sealed class CallbackHandlers
         }
         else
         {
-            await _botClient.SendMessage(
+            await _botClient.SendNoPreview(
                 chatId,
                 text,
                 replyMarkup: new InlineKeyboardMarkup(buttons),
@@ -1266,7 +1266,7 @@ public sealed class CallbackHandlers
         var parts = data.Split(':');
         if (parts.Length < 2 || !int.TryParse(parts[1], out var month) || month < 1 || month > 12)
         {
-            await _botClient.SendMessage(
+            await _botClient.SendNoPreview(
                 callbackQuery.Message?.Chat.Id ?? callbackQuery.From!.Id,
                 "Ошибка: неверный номер месяца",
                 cancellationToken: cancellationToken);
@@ -1286,7 +1286,7 @@ public sealed class CallbackHandlers
         if (parts.Length < 3 || !int.TryParse(parts[1], out var month) || month < 1 || month > 12 ||
             !int.TryParse(parts[2], out var page) || page < 0)
         {
-            await _botClient.SendMessage(
+            await _botClient.SendNoPreview(
                 callbackQuery.Message?.Chat.Id ?? callbackQuery.From!.Id,
                 "Ошибка: неверный формат данных",
                 cancellationToken: cancellationToken);
@@ -1310,7 +1310,7 @@ public sealed class CallbackHandlers
 
         if (monthBirthdays.Count == 0)
         {
-            await _botClient.SendMessage(
+            await _botClient.SendNoPreview(
                 chatId,
                 $"Дней рождения в {monthName} нет",
                 cancellationToken: cancellationToken);
@@ -1361,7 +1361,7 @@ public sealed class CallbackHandlers
 
         if (messageId.HasValue)
         {
-            await _botClient.EditMessageText(
+            await _botClient.EditNoPreview(
                 chatId,
                 messageId.Value,
                 text,
@@ -1370,7 +1370,7 @@ public sealed class CallbackHandlers
         }
         else
         {
-            await _botClient.SendMessage(
+            await _botClient.SendNoPreview(
                 chatId,
                 text,
                 replyMarkup: new InlineKeyboardMarkup(buttons),
@@ -1387,7 +1387,7 @@ public sealed class CallbackHandlers
         var parts = data.Split(':');
         if (parts.Length < 2 || !int.TryParse(parts[1], out var month) || month < 1 || month > 12)
         {
-            await _botClient.SendMessage(
+            await _botClient.SendNoPreview(
                 callbackQuery.Message?.Chat.Id ?? callbackQuery.From!.Id,
                 "Ошибка: неверный номер месяца",
                 cancellationToken: cancellationToken);
@@ -1407,7 +1407,7 @@ public sealed class CallbackHandlers
         if (parts.Length < 3 || !int.TryParse(parts[1], out var month) || month < 1 || month > 12 ||
             !int.TryParse(parts[2], out var page) || page < 0)
         {
-            await _botClient.SendMessage(
+            await _botClient.SendNoPreview(
                 callbackQuery.Message?.Chat.Id ?? callbackQuery.From!.Id,
                 "Ошибка: неверный формат данных",
                 cancellationToken: cancellationToken);
@@ -1469,7 +1469,7 @@ public sealed class CallbackHandlers
 
         if (monthEvents.Count == 0)
         {
-            await _botClient.SendMessage(
+            await _botClient.SendNoPreview(
                 chatId,
                 $"События в {monthName} нет",
                 cancellationToken: cancellationToken);
@@ -1517,7 +1517,7 @@ public sealed class CallbackHandlers
 
         if (messageId.HasValue)
         {
-            await _botClient.EditMessageText(
+            await _botClient.EditNoPreview(
                 chatId,
                 messageId.Value,
                 text,
@@ -1526,7 +1526,7 @@ public sealed class CallbackHandlers
         }
         else
         {
-            await _botClient.SendMessage(
+            await _botClient.SendNoPreview(
                 chatId,
                 text,
                 replyMarkup: new InlineKeyboardMarkup(buttons),
@@ -1543,7 +1543,7 @@ public sealed class CallbackHandlers
         var parts = data.Split(':');
         if (parts.Length < 2 || !int.TryParse(parts[1], out var month) || month < 1 || month > 12)
         {
-            await _botClient.SendMessage(
+            await _botClient.SendNoPreview(
                 callbackQuery.Message?.Chat.Id ?? callbackQuery.From!.Id,
                 "Ошибка: неверный номер месяца",
                 cancellationToken: cancellationToken);
@@ -1563,7 +1563,7 @@ public sealed class CallbackHandlers
         if (parts.Length < 3 || !int.TryParse(parts[1], out var month) || month < 1 || month > 12 ||
             !int.TryParse(parts[2], out var page) || page < 0)
         {
-            await _botClient.SendMessage(
+            await _botClient.SendNoPreview(
                 callbackQuery.Message?.Chat.Id ?? callbackQuery.From!.Id,
                 "Ошибка: неверный формат данных",
                 cancellationToken: cancellationToken);
@@ -1617,7 +1617,7 @@ public sealed class CallbackHandlers
 
         if (monthEvents.Count == 0)
         {
-            await _botClient.SendMessage(
+            await _botClient.SendNoPreview(
                 chatId,
                 $"События в {monthName} нет",
                 cancellationToken: cancellationToken);
@@ -1665,7 +1665,7 @@ public sealed class CallbackHandlers
 
         if (messageId.HasValue)
         {
-            await _botClient.EditMessageText(
+            await _botClient.EditNoPreview(
                 chatId,
                 messageId.Value,
                 text,
@@ -1674,7 +1674,7 @@ public sealed class CallbackHandlers
         }
         else
         {
-            await _botClient.SendMessage(
+            await _botClient.SendNoPreview(
                 chatId,
                 text,
                 replyMarkup: new InlineKeyboardMarkup(buttons),
@@ -1691,7 +1691,7 @@ public sealed class CallbackHandlers
         var parts = data.Split(':');
         if (parts.Length < 2 || !int.TryParse(parts[1], out var month) || month < 1 || month > 12)
         {
-            await _botClient.SendMessage(
+            await _botClient.SendNoPreview(
                 callbackQuery.Message?.Chat.Id ?? callbackQuery.From!.Id,
                 "Ошибка: неверный номер месяца",
                 cancellationToken: cancellationToken);
@@ -1711,7 +1711,7 @@ public sealed class CallbackHandlers
         if (parts.Length < 3 || !int.TryParse(parts[1], out var month) || month < 1 || month > 12 ||
             !int.TryParse(parts[2], out var page) || page < 0)
         {
-            await _botClient.SendMessage(
+            await _botClient.SendNoPreview(
                 callbackQuery.Message?.Chat.Id ?? callbackQuery.From!.Id,
                 "Ошибка: неверный формат данных",
                 cancellationToken: cancellationToken);
@@ -1773,7 +1773,7 @@ public sealed class CallbackHandlers
 
         if (monthEvents.Count == 0)
         {
-            await _botClient.SendMessage(
+            await _botClient.SendNoPreview(
                 chatId,
                 $"События в {monthName} отсутствуют",
                 cancellationToken: cancellationToken);
@@ -1838,7 +1838,7 @@ public sealed class CallbackHandlers
 
         if (messageId.HasValue)
         {
-            await _botClient.EditMessageText(
+            await _botClient.EditNoPreview(
                 chatId,
                 messageId.Value,
                 fullText,
@@ -1847,7 +1847,7 @@ public sealed class CallbackHandlers
         }
         else
         {
-            await _botClient.SendMessage(
+            await _botClient.SendNoPreview(
                 chatId,
                 fullText,
                 replyMarkup: new InlineKeyboardMarkup(buttons),
@@ -1864,7 +1864,7 @@ public sealed class CallbackHandlers
         var parts = data.Split(':');
         if (parts.Length < 2 || !int.TryParse(parts[1], out var weekOffset))
         {
-            await _botClient.SendMessage(
+            await _botClient.SendNoPreview(
                 callbackQuery.Message?.Chat.Id ?? callbackQuery.From!.Id,
                 "Ошибка: неверный формат данных",
                 cancellationToken: cancellationToken);
@@ -1884,7 +1884,7 @@ public sealed class CallbackHandlers
         var parts = data.Split(':');
         if (parts.Length < 2 || !int.TryParse(parts[1], out var monthOffset))
         {
-            await _botClient.SendMessage(
+            await _botClient.SendNoPreview(
                 callbackQuery.Message?.Chat.Id ?? callbackQuery.From!.Id,
                 "Ошибка: неверный формат данных",
                 cancellationToken: cancellationToken);
@@ -2059,7 +2059,7 @@ public sealed class CallbackHandlers
 
         if (messageId.HasValue)
         {
-            await _botClient.EditMessageText(
+            await _botClient.EditNoPreview(
                 chatId,
                 messageId.Value,
                 text,
@@ -2068,7 +2068,7 @@ public sealed class CallbackHandlers
         }
         else
         {
-            await _botClient.SendMessage(
+            await _botClient.SendNoPreview(
                 chatId,
                 text,
                 replyMarkup: new InlineKeyboardMarkup(buttons),
@@ -2212,7 +2212,7 @@ public sealed class CallbackHandlers
 
         if (messageId.HasValue)
         {
-            await _botClient.EditMessageText(
+            await _botClient.EditNoPreview(
                 chatId,
                 messageId.Value,
                 text,
@@ -2221,7 +2221,7 @@ public sealed class CallbackHandlers
         }
         else
         {
-            await _botClient.SendMessage(
+            await _botClient.SendNoPreview(
                 chatId,
                 text,
                 replyMarkup: new InlineKeyboardMarkup(buttons),

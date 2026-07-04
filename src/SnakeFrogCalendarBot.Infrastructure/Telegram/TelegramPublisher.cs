@@ -30,7 +30,9 @@ public sealed class TelegramPublisher : ITelegramPublisher
         try
         {
             var chatId = new ChatId(_targetChat);
-            var message = await _botClient.SendMessage(chatId, text, cancellationToken: cancellationToken);
+            var message = await _botClient.SendMessage(chatId, text,
+                linkPreviewOptions: new LinkPreviewOptions { IsDisabled = true },
+                cancellationToken: cancellationToken);
             _logger.LogInformation("Message sent to {TargetChat}", _targetChat);
             return message.MessageId;
         }
@@ -78,7 +80,9 @@ public sealed class TelegramPublisher : ITelegramPublisher
         try
         {
             var chatId = new ChatId(_targetChat);
-            await _botClient.EditMessageText(chatId, messageId, text, cancellationToken: cancellationToken);
+            await _botClient.EditMessageText(chatId, messageId, text,
+                linkPreviewOptions: new LinkPreviewOptions { IsDisabled = true },
+                cancellationToken: cancellationToken);
             _logger.LogInformation("Message {MessageId} edited in {TargetChat}", messageId, _targetChat);
         }
         catch (Exception ex)
