@@ -7,6 +7,7 @@ using SnakeFrogCalendarBot.Application.UseCases.Birthdays;
 using SnakeFrogCalendarBot.Application.UseCases.Events;
 using SnakeFrogCalendarBot.Application.UseCases.Notifications;
 using SnakeFrogCalendarBot.Domain.Entities;
+using SnakeFrogCalendarBot.Worker.Api;
 using SnakeFrogCalendarBot.Worker.Config;
 using SnakeFrogCalendarBot.Worker.Telegram;
 using Telegram.Bot;
@@ -36,6 +37,7 @@ public sealed class CommandHandlers
     private readonly CreateBirthday _createBirthday;
     private readonly ITimeZoneProvider _timeZoneProvider;
     private readonly IServiceProvider _serviceProvider;
+    private readonly MiniAppTokenService _tokenService;
     private readonly string _miniAppUrl;
 
     public CommandHandlers(
@@ -58,6 +60,7 @@ public sealed class CommandHandlers
         CreateBirthday createBirthday,
         ITimeZoneProvider timeZoneProvider,
         IServiceProvider serviceProvider,
+        MiniAppTokenService tokenService,
         AppOptions appOptions)
     {
         _botClient = botClient;
@@ -79,6 +82,7 @@ public sealed class CommandHandlers
         _createBirthday = createBirthday;
         _timeZoneProvider = timeZoneProvider;
         _serviceProvider = serviceProvider;
+        _tokenService = tokenService;
         _miniAppUrl = appOptions.MiniAppUrl;
     }
 
@@ -539,10 +543,14 @@ public sealed class CommandHandlers
             ? "Добро пожаловать! Используйте клавиатуру для быстрого доступа к функциям."
             : "Используйте клавиатуру для быстрого доступа к функциям.";
 
+        string? token = null;
+        if (!string.IsNullOrWhiteSpace(_miniAppUrl) && message.From?.Id is { } userId)
+            token = _tokenService.GetOrCreatePersistent(userId);
+
         await _botClient.SendMessage(
             message.Chat.Id,
             text,
-            replyMarkup: ReplyKeyboards.MainKeyboard(_miniAppUrl),
+            replyMarkup: ReplyKeyboards.MainKeyboard(_miniAppUrl, token),
             cancellationToken: cancellationToken);
 
     }
