@@ -324,27 +324,10 @@ public sealed class CommandHandlers
 
     private async Task SendBirthdayListForDeleteAsync(Message message, CancellationToken cancellationToken)
     {
-        var birthdays = await _listBirthdays.ExecuteAsync(cancellationToken);
-        var text = "Выберите день рождения для удаления:";
-        var buttons = new List<List<InlineKeyboardButton>>();
-
-        foreach (var birthday in birthdays)
-        {
-            buttons.Add(new List<InlineKeyboardButton>
-            {
-                InlineKeyboardButton.WithCallbackData($"🗑 {birthday.PersonName}", $"birthday_delete:{birthday.Id}")
-            });
-        }
-
-        if (buttons.Count == 0)
-        {
-            text = "Дней рождения пока нет";
-        }
-
         await _botClient.SendMessage(
             message.Chat.Id,
-            text,
-            replyMarkup: buttons.Count > 0 ? new InlineKeyboardMarkup(buttons) : null,
+            "Выберите месяц для удаления дня рождения:",
+            replyMarkup: InlineKeyboards.MonthSelectionKeyboardForDelete(),
             cancellationToken: cancellationToken);
     }
 
@@ -441,27 +424,10 @@ public sealed class CommandHandlers
 
     private async Task SendEventListForDeleteAsync(Message message, CancellationToken cancellationToken)
     {
-        var events = await _eventRepository.ListAllAsync(cancellationToken);
-        var text = "Выберите событие для удаления:";
-        var buttons = new List<List<InlineKeyboardButton>>();
-
-        foreach (var eventEntity in events)
-        {
-            buttons.Add(new List<InlineKeyboardButton>
-            {
-                InlineKeyboardButton.WithCallbackData($"🗑 {eventEntity.Title}", $"event_delete:{eventEntity.Id}")
-            });
-        }
-
-        if (buttons.Count == 0)
-        {
-            text = "Событий пока нет";
-        }
-
         await _botClient.SendMessage(
             message.Chat.Id,
-            text,
-            replyMarkup: buttons.Count > 0 ? new InlineKeyboardMarkup(buttons) : null,
+            "Выберите месяц для удаления события:",
+            replyMarkup: InlineKeyboards.EventMonthSelectionKeyboardForDelete(),
             cancellationToken: cancellationToken);
     }
 

@@ -112,6 +112,18 @@ public sealed class CallbackHandlers
             return;
         }
 
+        if (data.StartsWith("birthday_delete_month:"))
+        {
+            await HandleBirthdayDeleteMonthAsync(callbackQuery, data, cancellationToken);
+            return;
+        }
+
+        if (data.StartsWith("birthday_delete_month_page:"))
+        {
+            await HandleBirthdayDeleteMonthPageAsync(callbackQuery, data, cancellationToken);
+            return;
+        }
+
         if (data.StartsWith("birthday_edit_month:"))
         {
             await HandleBirthdayEditMonthAsync(callbackQuery, data, cancellationToken);
@@ -133,6 +145,18 @@ public sealed class CallbackHandlers
         if (data.StartsWith("event_edit_month_page:"))
         {
             await HandleEventEditMonthPageAsync(callbackQuery, data, cancellationToken);
+            return;
+        }
+
+        if (data.StartsWith("event_delete_month:"))
+        {
+            await HandleEventDeleteMonthAsync(callbackQuery, data, cancellationToken);
+            return;
+        }
+
+        if (data.StartsWith("event_delete_month_page:"))
+        {
+            await HandleEventDeleteMonthPageAsync(callbackQuery, data, cancellationToken);
             return;
         }
 
@@ -928,6 +952,7 @@ public sealed class CallbackHandlers
             new[] { InlineKeyboardButton.WithCallbackData("📍 Место", $"event_edit_field:{eventId}:place") },
             new[] { InlineKeyboardButton.WithCallbackData("🔗 Ссылка", $"event_edit_field:{eventId}:link") },
             new[] { InlineKeyboardButton.WithCallbackData("📎 Файл", $"event_attach:{eventId}") },
+            new[] { InlineKeyboardButton.WithCallbackData("🗑 Удалить", $"event_delete:{eventId}") },
             new[] { InlineKeyboardButton.WithCallbackData("❌ Отмена", "cancel") }
         });
     }
@@ -940,6 +965,7 @@ public sealed class CallbackHandlers
             new[] { InlineKeyboardButton.WithCallbackData("🎂 Дата", $"birthday_edit_field:{birthdayId}:date") },
             new[] { InlineKeyboardButton.WithCallbackData("📅 Год рождения", $"birthday_edit_field:{birthdayId}:birthYear") },
             new[] { InlineKeyboardButton.WithCallbackData("🔗 Контакт", $"birthday_edit_field:{birthdayId}:contact") },
+            new[] { InlineKeyboardButton.WithCallbackData("🗑 Удалить", $"birthday_delete:{birthdayId}") },
             new[] { InlineKeyboardButton.WithCallbackData("❌ Отмена", "cancel") }
         });
     }
@@ -1108,6 +1134,127 @@ public sealed class CallbackHandlers
             callbackQuery.Message?.Chat.Id ?? callbackQuery.From!.Id,
             text,
             cancellationToken: cancellationToken);
+    }
+
+    private async Task HandleBirthdayDeleteMonthAsync(CallbackQuery callbackQuery, string data, CancellationToken cancellationToken)
+    {
+        await _botClient.AnswerCallbackQuery(
+            callbackQuery.Id,
+            cancellationToken: cancellationToken);
+
+        var parts = data.Split(':');
+        if (parts.Length < 2 || !int.TryParse(parts[1], out var month) || month < 1 || month > 12)
+        {
+            await _botClient.SendMessage(
+                callbackQuery.Message?.Chat.Id ?? callbackQuery.From!.Id,
+                "Ошибка: неверный номер месяца",
+                cancellationToken: cancellationToken);
+            return;
+        }
+
+        await SendBirthdayDeleteMonthPageAsync(callbackQuery.Message?.Chat.Id ?? callbackQuery.From!.Id, month, 0, null, cancellationToken);
+    }
+
+    private async Task HandleBirthdayDeleteMonthPageAsync(CallbackQuery callbackQuery, string data, CancellationToken cancellationToken)
+    {
+        await _botClient.AnswerCallbackQuery(
+            callbackQuery.Id,
+            cancellationToken: cancellationToken);
+
+        var parts = data.Split(':');
+        if (parts.Length < 3 || !int.TryParse(parts[1], out var month) || month < 1 || month > 12 ||
+            !int.TryParse(parts[2], out var page) || page < 0)
+        {
+            await _botClient.SendMessage(
+                callbackQuery.Message?.Chat.Id ?? callbackQuery.From!.Id,
+                "Ошибка: неверный формат данных",
+                cancellationToken: cancellationToken);
+            return;
+        }
+
+        var messageId = callbackQuery.Message?.MessageId;
+        await SendBirthdayDeleteMonthPageAsync(callbackQuery.Message?.Chat.Id ?? callbackQuery.From!.Id, month, page, messageId, cancellationToken);
+    }
+
+    private async Task SendBirthdayDeleteMonthPageAsync(long chatId, int month, int page, int? messageId, CancellationToken cancellationToken)
+    {
+        var allBirthdays = await _listBirthdays.ExecuteAsync(cancellationToken);
+        var monthBirthdays = allBirthdays
+            .Where(b => b.Month == month)
+            .OrderBy(b => b.Day)
+            .ThenBy(b => b.PersonName)
+            .ToList();
+
+        var monthName = CultureInfo.GetCultureInfo("ru-RU").DateTimeFormat.GetMonthName(month);
+
+        if (monthBirthdays.Count == 0)
+        {
+            await _botClient.SendMessage(
+                chatId,
+                $"Дней рождения в {monthName} нет",
+                cancellationToken: cancellationToken);
+            return;
+        }
+
+        const int itemsPerPage = 10;
+        var totalPages = (monthBirthdays.Count + itemsPerPage - 1) / itemsPerPage;
+        var currentPage = Math.Min(page, totalPages - 1);
+        var startIndex = currentPage * itemsPerPage;
+        var endIndex = Math.Min(startIndex + itemsPerPage, monthBirthdays.Count);
+        var pageBirthdays = monthBirthdays.Skip(startIndex).Take(endIndex - startIndex).ToList();
+
+        var buttons = new List<List<InlineKeyboardButton>>();
+        foreach (var birthday in pageBirthdays)
+        {
+            var dayText = $"{birthday.Day:D2}.{birthday.Month:D2}";
+            buttons.Add(new List<InlineKeyboardButton>
+            {
+                InlineKeyboardButton.WithCallbackData(
+                    $"🗑 {dayText} {birthday.PersonName}",
+                    $"birthday_delete:{birthday.Id}")
+            });
+        }
+
+        if (totalPages > 1)
+        {
+            var navigationRow = new List<InlineKeyboardButton>();
+            if (currentPage > 0)
+            {
+                navigationRow.Add(InlineKeyboardButton.WithCallbackData(
+                    "◀️ Назад",
+                    $"birthday_delete_month_page:{month}:{currentPage - 1}"));
+            }
+            if (currentPage < totalPages - 1)
+            {
+                navigationRow.Add(InlineKeyboardButton.WithCallbackData(
+                    "Вперёд ▶️",
+                    $"birthday_delete_month_page:{month}:{currentPage + 1}"));
+            }
+            if (navigationRow.Count > 0)
+            {
+                buttons.Add(navigationRow);
+            }
+        }
+
+        var text = $"Выберите день рождения для удаления ({monthName}, страница {currentPage + 1} из {totalPages}):";
+
+        if (messageId.HasValue)
+        {
+            await _botClient.EditMessageText(
+                chatId,
+                messageId.Value,
+                text,
+                replyMarkup: new InlineKeyboardMarkup(buttons),
+                cancellationToken: cancellationToken);
+        }
+        else
+        {
+            await _botClient.SendMessage(
+                chatId,
+                text,
+                replyMarkup: new InlineKeyboardMarkup(buttons),
+                cancellationToken: cancellationToken);
+        }
     }
 
     private async Task HandleBirthdayEditMonthAsync(CallbackQuery callbackQuery, string data, CancellationToken cancellationToken)
@@ -1367,6 +1514,154 @@ public sealed class CallbackHandlers
         }
 
         var text = $"Выберите событие для редактирования ({monthName}, страница {currentPage + 1} из {totalPages}):";
+
+        if (messageId.HasValue)
+        {
+            await _botClient.EditMessageText(
+                chatId,
+                messageId.Value,
+                text,
+                replyMarkup: new InlineKeyboardMarkup(buttons),
+                cancellationToken: cancellationToken);
+        }
+        else
+        {
+            await _botClient.SendMessage(
+                chatId,
+                text,
+                replyMarkup: new InlineKeyboardMarkup(buttons),
+                cancellationToken: cancellationToken);
+        }
+    }
+
+    private async Task HandleEventDeleteMonthAsync(CallbackQuery callbackQuery, string data, CancellationToken cancellationToken)
+    {
+        await _botClient.AnswerCallbackQuery(
+            callbackQuery.Id,
+            cancellationToken: cancellationToken);
+
+        var parts = data.Split(':');
+        if (parts.Length < 2 || !int.TryParse(parts[1], out var month) || month < 1 || month > 12)
+        {
+            await _botClient.SendMessage(
+                callbackQuery.Message?.Chat.Id ?? callbackQuery.From!.Id,
+                "Ошибка: неверный номер месяца",
+                cancellationToken: cancellationToken);
+            return;
+        }
+
+        await SendEventDeleteMonthPageAsync(callbackQuery.Message?.Chat.Id ?? callbackQuery.From!.Id, month, 0, null, cancellationToken);
+    }
+
+    private async Task HandleEventDeleteMonthPageAsync(CallbackQuery callbackQuery, string data, CancellationToken cancellationToken)
+    {
+        await _botClient.AnswerCallbackQuery(
+            callbackQuery.Id,
+            cancellationToken: cancellationToken);
+
+        var parts = data.Split(':');
+        if (parts.Length < 3 || !int.TryParse(parts[1], out var month) || month < 1 || month > 12 ||
+            !int.TryParse(parts[2], out var page) || page < 0)
+        {
+            await _botClient.SendMessage(
+                callbackQuery.Message?.Chat.Id ?? callbackQuery.From!.Id,
+                "Ошибка: неверный формат данных",
+                cancellationToken: cancellationToken);
+            return;
+        }
+
+        var messageId = callbackQuery.Message?.MessageId;
+        await SendEventDeleteMonthPageAsync(callbackQuery.Message?.Chat.Id ?? callbackQuery.From!.Id, month, page, messageId, cancellationToken);
+    }
+
+    private async Task SendEventDeleteMonthPageAsync(long chatId, int month, int page, int? messageId, CancellationToken cancellationToken)
+    {
+        var timeZone = NodaTime.DateTimeZoneProviders.Tzdb[_timeZoneProvider.GetTimeZoneId()];
+
+        var allEvents = await _eventRepository.ListAllAsync(cancellationToken);
+
+        var monthEvents = allEvents
+            .Where(e =>
+            {
+                if (e.Kind == Domain.Enums.EventKind.OneOff && e.OccursAtUtc.HasValue)
+                {
+                    var eventInstant = NodaTime.Instant.FromDateTimeUtc(e.OccursAtUtc.Value.UtcDateTime);
+                    return eventInstant.InZone(timeZone).Month == month;
+                }
+
+                if (e.Kind == Domain.Enums.EventKind.Yearly && e.Month.HasValue)
+                {
+                    return e.Month.Value == month;
+                }
+
+                return false;
+            })
+            .OrderBy(e =>
+            {
+                if (e.Kind == Domain.Enums.EventKind.OneOff && e.OccursAtUtc.HasValue)
+                    return e.OccursAtUtc.Value.UtcDateTime;
+
+                var today = NodaTime.Instant.FromDateTimeUtc(DateTime.UtcNow).InZone(timeZone).Date;
+                var thisYear = new NodaTime.LocalDate(today.Year, e.Month!.Value, e.Day!.Value);
+                var nextOccurrence = thisYear >= today ? thisYear : thisYear.PlusYears(1);
+                var localDateTime = e.IsAllDay
+                    ? nextOccurrence.AtMidnight()
+                    : nextOccurrence.At(e.TimeOfDay.HasValue
+                        ? NodaTime.LocalTime.FromTicksSinceMidnight(e.TimeOfDay.Value.Ticks)
+                        : NodaTime.LocalTime.Midnight);
+                return localDateTime.InZoneLeniently(timeZone).ToInstant().ToDateTimeUtc();
+            })
+            .ToList();
+
+        var monthName = CultureInfo.GetCultureInfo("ru-RU").DateTimeFormat.GetMonthName(month);
+
+        if (monthEvents.Count == 0)
+        {
+            await _botClient.SendMessage(
+                chatId,
+                $"События в {monthName} нет",
+                cancellationToken: cancellationToken);
+            return;
+        }
+
+        const int itemsPerPage = 10;
+        var totalPages = (monthEvents.Count + itemsPerPage - 1) / itemsPerPage;
+        var currentPage = Math.Min(page, totalPages - 1);
+        var startIndex = currentPage * itemsPerPage;
+        var endIndex = Math.Min(startIndex + itemsPerPage, monthEvents.Count);
+        var pageEvents = monthEvents.Skip(startIndex).Take(endIndex - startIndex).ToList();
+
+        var buttons = new List<List<InlineKeyboardButton>>();
+        foreach (var eventEntity in pageEvents)
+        {
+            buttons.Add(new List<InlineKeyboardButton>
+            {
+                InlineKeyboardButton.WithCallbackData($"🗑 {eventEntity.Title}", $"event_delete:{eventEntity.Id}")
+            });
+        }
+
+        if (totalPages > 1)
+        {
+            var navigationRow = new List<InlineKeyboardButton>();
+            if (currentPage > 0)
+            {
+                navigationRow.Add(InlineKeyboardButton.WithCallbackData(
+                    "◀️ Назад",
+                    $"event_delete_month_page:{month}:{currentPage - 1}"));
+            }
+            if (currentPage < totalPages - 1)
+            {
+                navigationRow.Add(InlineKeyboardButton.WithCallbackData(
+                    "Вперёд ▶️",
+                    $"event_delete_month_page:{month}:{currentPage + 1}"));
+            }
+            if (navigationRow.Count > 0)
+            {
+                buttons.Add(navigationRow);
+            }
+        }
+
+        var text = $"Выберите событие для удаления ({monthName}, страница {currentPage + 1} из {totalPages}):";
 
         if (messageId.HasValue)
         {
