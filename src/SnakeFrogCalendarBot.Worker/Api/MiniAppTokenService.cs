@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
+using System.Text;
+using SnakeFrogCalendarBot.Worker.Config;
 
 namespace SnakeFrogCalendarBot.Worker.Api;
 
@@ -7,9 +9,14 @@ public sealed class MiniAppTokenService
 {
     private static readonly TimeSpan TokenTtl = TimeSpan.FromMinutes(10);
 
+    private readonly string _botToken;
     private readonly ConcurrentDictionary<string, (long UserId, DateTimeOffset ExpiresAt)> _tokens = new();
-    private readonly ConcurrentDictionary<long, string> _persistentTokens = new();
     private readonly ConcurrentDictionary<string, long> _persistentTokenLookup = new();
+
+    public MiniAppTokenService(AppOptions options)
+    {
+        _botToken = options.TelegramBotToken;
+    }
 
     public string Generate(long userId)
     {
@@ -20,23 +27,21 @@ public sealed class MiniAppTokenService
     }
 
     /// <summary>
-    /// Returns a reusable token for the user, creating one if it doesn't exist.
-    /// Used for reply keyboard WebApp URLs where the URL is static.
+    /// Returns a deterministic reusable token for the user derived from the bot token.
+    /// Survives service restarts — pre-warm at startup for all allowed user IDs.
     /// </summary>
     public string GetOrCreatePersistent(long userId)
     {
-        if (_persistentTokens.TryGetValue(userId, out var existing))
-            return existing;
-
-        var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
-        token = _persistentTokens.GetOrAdd(userId, token);
+        var key = Encoding.UTF8.GetBytes(_botToken);
+        var data = Encoding.UTF8.GetBytes(userId.ToString());
+        var hash = HMACSHA256.HashData(key, data);
+        var token = Convert.ToHexString(hash).ToLowerInvariant();
         _persistentTokenLookup[token] = userId;
         return token;
     }
 
     public long? Consume(string token)
     {
-        // Check persistent tokens first (reusable, not consumed)
         if (_persistentTokenLookup.TryGetValue(token, out var persistentUserId))
             return persistentUserId;
 
