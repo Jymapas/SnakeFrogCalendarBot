@@ -7,6 +7,7 @@
         <Nullable>enable</Nullable>
         <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
         <RootNamespace>SnakeFrogCalendarBot</RootNamespace>
+        <Version>1.1.0</Version>
     </PropertyGroup>
 
     <ItemGroup>

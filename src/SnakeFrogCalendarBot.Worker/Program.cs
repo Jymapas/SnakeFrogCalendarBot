@@ -520,6 +520,12 @@ try
         }
     }
 
+    // Pre-warm persistent tokens so static Mini App URLs survive restarts
+    var tokenService = app.Services.GetRequiredService<MiniAppTokenService>();
+    var miniAppOpts = app.Services.GetRequiredService<AppOptions>();
+    foreach (var uid in miniAppOpts.AllowedUserIds)
+        tokenService.GetOrCreatePersistent(uid);
+
     await app.RunAsync();
 }
 catch (Exception ex)
