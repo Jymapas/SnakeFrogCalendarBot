@@ -33,6 +33,10 @@ public static class ReplyKeyboards
             },
             new[]
             {
+                new KeyboardButton("🔄 Обновить посты"),
+            },
+            new[]
+            {
                 new KeyboardButton("✏️ Редактировать"),
                 new KeyboardButton("🗑 Удалить")
             },

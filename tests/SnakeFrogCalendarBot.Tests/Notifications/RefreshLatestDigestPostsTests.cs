@@ -76,6 +76,42 @@ public sealed class RefreshLatestDigestPostsTests
         Assert.That(service.TelegramPublisher.EditedTexts.All(text => text.Contains("Совещание", StringComparison.Ordinal)));
     }
 
+    [Test]
+    public async Task ForAllAsync_AlwaysRefreshesAllPosts()
+    {
+        var birthday = new Birthday("Анна", 15, 3, null, null, new DateTime(2026, 2, 28, 9, 0, 0, DateTimeKind.Utc));
+        var service = CreateService(
+            birthdays: [birthday],
+            latestPosts:
+            [
+                Latest(DigestType.Daily, 101, new DateTime(2026, 2, 28), new DateTime(2026, 2, 28, 23, 59, 59)),
+                Latest(DigestType.Weekly, 102, new DateTime(2026, 2, 23), new DateTime(2026, 3, 1, 23, 59, 59)),
+                Latest(DigestType.Monthly, 103, new DateTime(2026, 2, 1), new DateTime(2026, 2, 28, 23, 59, 59))
+            ]);
+
+        await service.RefreshLatestDigestPosts.ForAllAsync(CancellationToken.None);
+
+        Assert.That(service.TelegramPublisher.EditedMessageIds, Is.EquivalentTo(new[] { 101, 102, 103 }));
+    }
+
+    [Test]
+    public async Task ForAllAsync_RemovesBirthdayFromWeeklyDigestAfterDateChange()
+    {
+        // Birthday moved from Feb 28 (was in weekly Feb 23 – Mar 1) to Mar 15 (outside that period)
+        var birthdayWithNewDate = new Birthday("Мария", 15, 3, null, null, new DateTime(2026, 2, 28, 9, 0, 0, DateTimeKind.Utc));
+        var service = CreateService(
+            birthdays: [birthdayWithNewDate],
+            latestPosts:
+            [
+                Latest(DigestType.Weekly, 102, new DateTime(2026, 2, 23), new DateTime(2026, 3, 1, 23, 59, 59))
+            ]);
+
+        await service.RefreshLatestDigestPosts.ForAllAsync(CancellationToken.None);
+
+        Assert.That(service.TelegramPublisher.EditedMessageIds, Is.EquivalentTo(new[] { 102 }));
+        Assert.That(service.TelegramPublisher.EditedTexts[0], Does.Not.Contain("Мария"));
+    }
+
     private static TestFixture CreateService(
         IReadOnlyList<Birthday>? birthdays = null,
         IReadOnlyList<Event>? events = null,

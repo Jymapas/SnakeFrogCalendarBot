@@ -62,7 +62,10 @@ public sealed class UpdateBirthday
 
         try
         {
-            await _refreshLatestDigestPosts.ForBirthdayAsync(birthday, cancellationToken);
+            var refreshTask = command.Field == "date"
+                ? _refreshLatestDigestPosts.ForAllAsync(cancellationToken)
+                : _refreshLatestDigestPosts.ForBirthdayAsync(birthday, cancellationToken);
+            await refreshTask;
         }
         catch (Exception ex)
         {

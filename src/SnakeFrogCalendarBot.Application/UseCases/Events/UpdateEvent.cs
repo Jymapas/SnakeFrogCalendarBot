@@ -87,7 +87,10 @@ public sealed class UpdateEvent
 
         try
         {
-            await _refreshLatestDigestPosts.ForEventAsync(eventEntity, cancellationToken);
+            var refreshTask = command.Field is "occursAtUtc" or "yearlyDate"
+                ? _refreshLatestDigestPosts.ForAllAsync(cancellationToken)
+                : _refreshLatestDigestPosts.ForEventAsync(eventEntity, cancellationToken);
+            await refreshTask;
         }
         catch (Exception ex)
         {

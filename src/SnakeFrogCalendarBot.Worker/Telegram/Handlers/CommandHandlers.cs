@@ -36,6 +36,7 @@ public sealed class CommandHandlers
     private readonly IBirthdayDateParser _birthdayDateParser;
     private readonly CreateBirthday _createBirthday;
     private readonly ITimeZoneProvider _timeZoneProvider;
+    private readonly RefreshLatestDigestPosts _refreshLatestDigestPosts;
     private readonly IServiceProvider _serviceProvider;
     private readonly MiniAppTokenService _tokenService;
     private readonly string _miniAppUrl;
@@ -59,6 +60,7 @@ public sealed class CommandHandlers
         IBirthdayDateParser birthdayDateParser,
         CreateBirthday createBirthday,
         ITimeZoneProvider timeZoneProvider,
+        RefreshLatestDigestPosts refreshLatestDigestPosts,
         IServiceProvider serviceProvider,
         MiniAppTokenService tokenService,
         AppOptions appOptions)
@@ -81,6 +83,7 @@ public sealed class CommandHandlers
         _birthdayDateParser = birthdayDateParser;
         _createBirthday = createBirthday;
         _timeZoneProvider = timeZoneProvider;
+        _refreshLatestDigestPosts = refreshLatestDigestPosts;
         _serviceProvider = serviceProvider;
         _tokenService = tokenService;
         _miniAppUrl = appOptions.MiniAppUrl;
@@ -131,6 +134,10 @@ public sealed class CommandHandlers
                 break;
             case BotCommands.DigestTest:
                 await TestDigestAsync(message, cancellationToken);
+                break;
+            case BotCommands.DigestRefresh:
+            case "🔄 Обновить посты":
+                await RefreshDigestsAsync(message, cancellationToken);
                 break;
             case BotCommands.Start:
             case BotCommands.Menu:
@@ -500,6 +507,21 @@ public sealed class CommandHandlers
                 $"Ошибка при формировании дайджеста: {ex.Message}",
                 cancellationToken: cancellationToken);
         }
+    }
+
+    private async Task RefreshDigestsAsync(Message message, CancellationToken cancellationToken)
+    {
+        await _botClient.SendNoPreview(
+            message.Chat.Id,
+            "Обновляю посты...",
+            cancellationToken: cancellationToken);
+
+        await _refreshLatestDigestPosts.ForAllAsync(cancellationToken);
+
+        await _botClient.SendNoPreview(
+            message.Chat.Id,
+            "Все последние посты обновлены.",
+            cancellationToken: cancellationToken);
     }
 
     private async Task ShowMainMenuAsync(Message message, CancellationToken cancellationToken)

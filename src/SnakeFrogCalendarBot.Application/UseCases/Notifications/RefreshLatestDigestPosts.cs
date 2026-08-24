@@ -38,6 +38,9 @@ public sealed class RefreshLatestDigestPosts
             cancellationToken);
     }
 
+    public Task ForAllAsync(CancellationToken cancellationToken)
+        => RefreshAsync(_ => true, cancellationToken);
+
     public Task ForEventAsync(Event eventEntity, CancellationToken cancellationToken)
     {
         return RefreshAsync(

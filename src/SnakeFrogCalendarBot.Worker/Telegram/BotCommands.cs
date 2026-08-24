@@ -17,6 +17,7 @@ public static class BotCommands
     public const string EventDelete = "/event_delete";
     public const string Cancel = "/cancel";
     public const string DigestTest = "/digest_test";
+    public const string DigestRefresh = "/digest_refresh";
     public const string Start = "/start";
     public const string Menu = "/menu";
 
@@ -32,6 +33,7 @@ public static class BotCommands
         EventDelete,
         Cancel,
         DigestTest,
+        DigestRefresh,
         Start,
         Menu,
     ];
@@ -48,6 +50,7 @@ public static class BotCommands
         [EventDelete] = "Удалить событие",
         [Cancel] = "Отменить текущее действие",
         [DigestTest] = "Тест дайджеста",
+        [DigestRefresh] = "Обновить последние посты",
         [Start] = "Главное меню",
         [Menu] = "Главное меню",
     };
