@@ -97,7 +97,10 @@ public sealed class PublishDigest
             ? await _latestDigestPostRepository.GetByDigestTypeAsync(DigestType.Monthly, cancellationToken)
             : null;
 
-        var items = await _digestItemsProvider.BuildAsync(periodStart, periodEnd, timeZoneId, cancellationToken);
+        var lookaheadCutoff = digestType == DigestType.Daily
+            ? DigestPeriodCalculator.DailyLookaheadCutoff
+            : (LocalTime?)null;
+        var items = await _digestItemsProvider.BuildAsync(periodStart, periodEnd, timeZoneId, cancellationToken, lookaheadCutoff);
         var digestText = digestType switch
         {
             DigestType.Daily => _digestFormatter.FormatDaily(periodStart, items),

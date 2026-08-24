@@ -23,6 +23,26 @@ public sealed class DigestFormatter
             return builder.ToString();
         }
 
+        var todayItems = items.Where(i => i.Date == date).ToList();
+        var lookaheadItems = items.Where(i => i.Date > date).OrderBy(i => i.Date).ToList();
+
+        AppendDailyItemsByTime(builder, todayItems, date);
+
+        if (lookaheadItems.Count > 0)
+        {
+            var lookaheadDate = lookaheadItems[0].Date;
+            builder.AppendLine();
+            builder.Append("⏰ Рано утром (");
+            builder.Append(lookaheadDate.ToString("d MMMM", _culture));
+            builder.AppendLine("):");
+            AppendDailyItemsByTime(builder, lookaheadItems, lookaheadDate);
+        }
+
+        return builder.ToString().TrimEnd();
+    }
+
+    private void AppendDailyItemsByTime(StringBuilder builder, IReadOnlyList<CalendarItemDto> items, LocalDate date)
+    {
         var groupedByTime = items
             .GroupBy(i => i.Time ?? LocalTime.MaxValue)
             .OrderBy(g => g.Key);
@@ -68,8 +88,6 @@ public sealed class DigestFormatter
                 builder.AppendLine();
             }
         }
-
-        return builder.ToString().TrimEnd();
     }
 
     public string FormatWeekly(LocalDate periodStart, LocalDate periodEnd, IReadOnlyList<CalendarItemDto> items)

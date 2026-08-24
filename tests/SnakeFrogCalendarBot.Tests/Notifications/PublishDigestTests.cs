@@ -141,6 +141,64 @@ public sealed class PublishDigestTests
         Assert.That(telegramPublisher.SentTexts, Has.Count.EqualTo(1));
     }
 
+    [Test]
+    public async Task PublishDailyAsync_IncludesEarlyNextDayEventUnderLookaheadSection()
+    {
+        var telegramPublisher = new RecordingTelegramPublisher();
+        var latestDigestPostRepository = new FakeLatestDigestPostRepository();
+        var notificationRunRepository = new FakeNotificationRunRepository();
+        var earlyNextDayEvent = Event.CreateOneOff(
+            "Ранний рейс",
+            new DateTimeOffset(2026, 3, 1, 5, 0, 0, TimeSpan.FromHours(3)),
+            false,
+            null,
+            null,
+            null,
+            new DateTime(2026, 2, 20, 9, 0, 0, DateTimeKind.Utc));
+
+        var publishDigest = CreatePublishDigest(
+            telegramPublisher,
+            latestDigestPostRepository,
+            notificationRunRepository,
+            events: [earlyNextDayEvent]);
+
+        var published = await publishDigest.PublishDailyAsync(new LocalDate(2026, 2, 28), CancellationToken.None);
+
+        Assert.That(published, Is.True);
+        var text = telegramPublisher.SentTexts.Single();
+        Assert.That(text, Does.Contain("Рано утром"));
+        Assert.That(text, Does.Contain("05:00"));
+        Assert.That(text, Does.Contain("Ранний рейс"));
+    }
+
+    [Test]
+    public async Task PublishDailyAsync_DoesNotIncludeNextDayEventAfterLookaheadCutoff()
+    {
+        var telegramPublisher = new RecordingTelegramPublisher();
+        var latestDigestPostRepository = new FakeLatestDigestPostRepository();
+        var notificationRunRepository = new FakeNotificationRunRepository();
+        var lateNextDayEvent = Event.CreateOneOff(
+            "Обед",
+            new DateTimeOffset(2026, 3, 1, 12, 0, 0, TimeSpan.FromHours(3)),
+            false,
+            null,
+            null,
+            null,
+            new DateTime(2026, 2, 20, 9, 0, 0, DateTimeKind.Utc));
+
+        var publishDigest = CreatePublishDigest(
+            telegramPublisher,
+            latestDigestPostRepository,
+            notificationRunRepository,
+            events: [lateNextDayEvent]);
+
+        var published = await publishDigest.PublishDailyAsync(new LocalDate(2026, 2, 28), CancellationToken.None);
+
+        Assert.That(published, Is.True);
+        var text = telegramPublisher.SentTexts.Single();
+        Assert.That(text, Does.Not.Contain("Обед"));
+    }
+
     private static PublishDigest CreatePublishDigest(
         RecordingTelegramPublisher telegramPublisher,
         FakeLatestDigestPostRepository latestDigestPostRepository,

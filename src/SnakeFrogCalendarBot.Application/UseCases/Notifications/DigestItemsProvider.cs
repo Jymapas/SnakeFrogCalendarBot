@@ -26,7 +26,8 @@ public sealed class DigestItemsProvider
         LocalDate periodStart,
         LocalDate periodEnd,
         string timeZoneId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        LocalTime? nextDayLookaheadCutoff = null)
     {
         var timeZone = DateTimeZoneProviders.Tzdb[timeZoneId];
         var items = new List<CalendarItemDto>();
@@ -36,7 +37,7 @@ public sealed class DigestItemsProvider
 
         foreach (var eventEntity in allEvents)
         {
-            if (!DigestOccurrenceResolver.TryResolve(eventEntity, periodStart, periodEnd, timeZone, out var eventDate, out var eventTime))
+            if (!DigestOccurrenceResolver.TryResolve(eventEntity, periodStart, periodEnd, timeZone, out var eventDate, out var eventTime, nextDayLookaheadCutoff))
             {
                 continue;
             }
@@ -99,15 +100,23 @@ internal static class DigestOccurrenceResolver
         LocalDate periodEnd,
         DateTimeZone timeZone,
         out LocalDate date,
-        out LocalTime? time)
+        out LocalTime? time,
+        LocalTime? lookaheadCutoff = null)
     {
         date = default;
         time = null;
 
+        var searchEnd = lookaheadCutoff.HasValue ? periodEnd.PlusDays(1) : periodEnd;
+
         if (eventEntity.Kind == EventKind.OneOff && eventEntity.OccursAtUtc.HasValue)
         {
             var occurrence = Instant.FromDateTimeOffset(eventEntity.OccursAtUtc.Value).InZone(timeZone).LocalDateTime;
-            if (occurrence.Date < periodStart || occurrence.Date > periodEnd)
+            if (occurrence.Date < periodStart || occurrence.Date > searchEnd)
+            {
+                return false;
+            }
+
+            if (occurrence.Date > periodEnd && (eventEntity.IsAllDay || occurrence.TimeOfDay >= lookaheadCutoff!.Value))
             {
                 return false;
             }
@@ -122,18 +131,25 @@ internal static class DigestOccurrenceResolver
             return false;
         }
 
-        var targetDate = ResolveYearlyDate(periodStart, periodEnd, eventEntity.Month.Value, eventEntity.Day.Value);
+        var targetDate = ResolveYearlyDate(periodStart, searchEnd, eventEntity.Month.Value, eventEntity.Day.Value);
         if (!targetDate.HasValue)
         {
             return false;
         }
 
-        date = targetDate.Value;
-        time = eventEntity.IsAllDay
+        var resolvedTime = eventEntity.IsAllDay
             ? null
             : eventEntity.TimeOfDay.HasValue
                 ? LocalTime.FromTicksSinceMidnight(eventEntity.TimeOfDay.Value.Ticks)
-                : null;
+                : (LocalTime?)null;
+
+        if (targetDate.Value > periodEnd && (resolvedTime is null || resolvedTime.Value >= lookaheadCutoff!.Value))
+        {
+            return false;
+        }
+
+        date = targetDate.Value;
+        time = resolvedTime;
 
         return true;
     }

@@ -5,7 +5,7 @@ namespace SnakeFrogCalendarBot.Application.UseCases.Notifications;
 
 public sealed class DigestCatchUpPlanner
 {
-    private static readonly LocalTime DailyTriggerTime = new(9, 0);
+    private static readonly LocalTime DailyTriggerTime = DigestPeriodCalculator.DailyLookaheadCutoff;
     private static readonly LocalTime WeeklyTriggerTime = new(21, 0);
     private static readonly LocalTime MonthlyTriggerTime = new(18, 0);
 

@@ -4,6 +4,8 @@ namespace SnakeFrogCalendarBot.Application.UseCases.Notifications;
 
 public sealed class DigestPeriodCalculator
 {
+    public static readonly LocalTime DailyLookaheadCutoff = new(9, 0);
+
     public LocalDate CalculateDailyDate(LocalDate triggerDate)
     {
         return triggerDate;

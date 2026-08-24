@@ -112,6 +112,55 @@ public sealed class RefreshLatestDigestPostsTests
         Assert.That(service.TelegramPublisher.EditedTexts[0], Does.Not.Contain("Мария"));
     }
 
+    [Test]
+    public async Task ForEventAsync_RefreshesLatestDailyPost_WhenEventIsEarlyNextMorning()
+    {
+        var earlyNextDayEvent = Event.CreateOneOff(
+            "Ранний рейс",
+            new DateTimeOffset(2026, 3, 1, 5, 0, 0, TimeSpan.FromHours(3)),
+            false,
+            null,
+            null,
+            null,
+            new DateTime(2026, 2, 28, 9, 0, 0, DateTimeKind.Utc));
+
+        var service = CreateService(
+            events: [earlyNextDayEvent],
+            latestPosts:
+            [
+                Latest(DigestType.Daily, 101, new DateTime(2026, 2, 28), new DateTime(2026, 2, 28, 23, 59, 59))
+            ]);
+
+        await service.RefreshLatestDigestPosts.ForEventAsync(earlyNextDayEvent, CancellationToken.None);
+
+        Assert.That(service.TelegramPublisher.EditedMessageIds, Is.EquivalentTo(new[] { 101 }));
+        Assert.That(service.TelegramPublisher.EditedTexts.Single(), Does.Contain("Ранний рейс"));
+    }
+
+    [Test]
+    public async Task ForEventAsync_DoesNotRefreshLatestDailyPost_WhenNextDayEventIsAfterLookaheadCutoff()
+    {
+        var lateNextDayEvent = Event.CreateOneOff(
+            "Обед",
+            new DateTimeOffset(2026, 3, 1, 12, 0, 0, TimeSpan.FromHours(3)),
+            false,
+            null,
+            null,
+            null,
+            new DateTime(2026, 2, 28, 9, 0, 0, DateTimeKind.Utc));
+
+        var service = CreateService(
+            events: [lateNextDayEvent],
+            latestPosts:
+            [
+                Latest(DigestType.Daily, 101, new DateTime(2026, 2, 28), new DateTime(2026, 2, 28, 23, 59, 59))
+            ]);
+
+        await service.RefreshLatestDigestPosts.ForEventAsync(lateNextDayEvent, CancellationToken.None);
+
+        Assert.That(service.TelegramPublisher.EditedMessageIds, Is.Empty);
+    }
+
     private static TestFixture CreateService(
         IReadOnlyList<Birthday>? birthdays = null,
         IReadOnlyList<Event>? events = null,

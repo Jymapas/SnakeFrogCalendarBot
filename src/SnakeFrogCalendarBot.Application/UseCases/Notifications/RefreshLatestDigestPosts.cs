@@ -47,13 +47,17 @@ public sealed class RefreshLatestDigestPosts
             post =>
             {
                 var timeZone = DateTimeZoneProviders.Tzdb[post.TimeZoneId];
+                var lookaheadCutoff = post.DigestType == DigestType.Daily
+                    ? DigestPeriodCalculator.DailyLookaheadCutoff
+                    : (LocalTime?)null;
                 return DigestOccurrenceResolver.TryResolve(
                     eventEntity,
                     ToLocalDate(post.PeriodStartLocal),
                     ToLocalDate(post.PeriodEndLocal),
                     timeZone,
                     out _,
-                    out _);
+                    out _,
+                    lookaheadCutoff);
             },
             cancellationToken);
     }
@@ -73,11 +77,15 @@ public sealed class RefreshLatestDigestPosts
 
             var periodStart = ToLocalDate(latestPost.PeriodStartLocal);
             var periodEnd = ToLocalDate(latestPost.PeriodEndLocal);
+            var lookaheadCutoff = latestPost.DigestType == DigestType.Daily
+                ? DigestPeriodCalculator.DailyLookaheadCutoff
+                : (LocalTime?)null;
             var items = await _digestItemsProvider.BuildAsync(
                 periodStart,
                 periodEnd,
                 latestPost.TimeZoneId,
-                cancellationToken);
+                cancellationToken,
+                lookaheadCutoff);
 
             var digestText = latestPost.DigestType switch
             {
