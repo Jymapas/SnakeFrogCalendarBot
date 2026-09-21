@@ -1386,7 +1386,7 @@ public sealed class CallbackHandlers
             cancellationToken: cancellationToken);
 
         var parts = data.Split(':');
-        if (parts.Length < 2 || !int.TryParse(parts[1], out var month) || month < 1 || month > 12)
+        if (parts.Length < 2 || !int.TryParse(parts[1], out var month) || month < 0 || month > 12)
         {
             await _botClient.SendNoPreview(
                 callbackQuery.Message?.Chat.Id ?? callbackQuery.From!.Id,
@@ -1405,7 +1405,7 @@ public sealed class CallbackHandlers
             cancellationToken: cancellationToken);
 
         var parts = data.Split(':');
-        if (parts.Length < 3 || !int.TryParse(parts[1], out var month) || month < 1 || month > 12 ||
+        if (parts.Length < 3 || !int.TryParse(parts[1], out var month) || month < 0 || month > 12 ||
             !int.TryParse(parts[2], out var page) || page < 0)
         {
             await _botClient.SendNoPreview(
@@ -1419,6 +1419,54 @@ public sealed class CallbackHandlers
         await SendEventEditMonthPageAsync(callbackQuery.Message?.Chat.Id ?? callbackQuery.From!.Id, month, page, messageId, cancellationToken);
     }
 
+    /// <summary>
+    /// Номер месяца, в корзину которого попадает событие. Повторяющиеся события не привязаны
+    /// к одному месяцу и уходят в отдельную корзину 0.
+    /// </summary>
+    private static int GetMonthBucket(Domain.Entities.Event eventEntity, NodaTime.DateTimeZone timeZone)
+    {
+        if (eventEntity.IsRecurringSchedule)
+        {
+            return 0;
+        }
+
+        if (eventEntity.Kind == Domain.Enums.EventKind.OneOff && eventEntity.OccursAtUtc.HasValue)
+        {
+            return NodaTime.Instant.FromDateTimeOffset(eventEntity.OccursAtUtc.Value).InZone(timeZone).Month;
+        }
+
+        if (eventEntity.Kind == Domain.Enums.EventKind.Yearly && eventEntity.Month.HasValue)
+        {
+            return eventEntity.Month.Value;
+        }
+
+        return -1;
+    }
+
+    private static NodaTime.Instant GetMonthBucketSortKey(
+        Domain.Entities.Event eventEntity,
+        NodaTime.LocalDate today,
+        NodaTime.DateTimeZone timeZone)
+    {
+        var next = EventNextOccurrenceCalculator.TryGetNextOccurrence(eventEntity, today, timeZone);
+        if (next.HasValue)
+        {
+            return next.Value;
+        }
+
+        // Прошедшие разовые события остаются в списке удаления и сортируются по своей дате.
+        return eventEntity.OccursAtUtc.HasValue
+            ? NodaTime.Instant.FromDateTimeOffset(eventEntity.OccursAtUtc.Value)
+            : NodaTime.Instant.MaxValue;
+    }
+
+    private static string GetMonthBucketName(int month)
+    {
+        return month == 0
+            ? "Повторяющиеся"
+            : CultureInfo.GetCultureInfo("ru-RU").DateTimeFormat.GetMonthName(month);
+    }
+
     private async Task SendEventEditMonthPageAsync(long chatId, int month, int page, int? messageId, CancellationToken cancellationToken)
     {
         var now = _clock.UtcNow;
@@ -1429,44 +1477,11 @@ public sealed class CallbackHandlers
         var allUpcomingEvents = await _eventRepository.ListUpcomingForEditAsync(cancellationToken);
         
         var monthEvents = allUpcomingEvents
-            .Where(e =>
-            {
-                var eventMonth = 0;
-
-                if (e.Kind == Domain.Enums.EventKind.OneOff && e.OccursAtUtc.HasValue)
-                {
-                    var eventInstant = NodaTime.Instant.FromDateTimeUtc(e.OccursAtUtc.Value.UtcDateTime);
-                    var eventInZone = eventInstant.InZone(timeZone);
-                    eventMonth = eventInZone.Month;
-                }
-                else if (e.Kind == Domain.Enums.EventKind.Yearly && e.Month.HasValue && e.Day.HasValue)
-                {
-                    var thisYear = new NodaTime.LocalDate(today.Year, e.Month.Value, e.Day.Value);
-                    var nextOccurrence = thisYear >= today ? thisYear : thisYear.PlusYears(1);
-                    eventMonth = nextOccurrence.Month;
-                }
-
-                return eventMonth == month;
-            })
-            .OrderBy(e =>
-            {
-                if (e.Kind == Domain.Enums.EventKind.OneOff && e.OccursAtUtc.HasValue)
-                {
-                    return e.OccursAtUtc.Value.UtcDateTime;
-                }
-
-                var thisYear = new NodaTime.LocalDate(today.Year, e.Month!.Value, e.Day!.Value);
-                var nextOccurrence = thisYear >= today ? thisYear : thisYear.PlusYears(1);
-                var localDateTime = e.IsAllDay
-                    ? nextOccurrence.AtMidnight()
-                    : nextOccurrence.At(e.TimeOfDay.HasValue ? NodaTime.LocalTime.FromTicksSinceMidnight(e.TimeOfDay.Value.Ticks) : NodaTime.LocalTime.Midnight);
-                var zonedDateTime = localDateTime.InZoneLeniently(timeZone);
-                var instant = zonedDateTime.ToInstant();
-                return instant.ToDateTimeUtc();
-            })
+            .Where(e => GetMonthBucket(e, timeZone) == month)
+            .OrderBy(e => GetMonthBucketSortKey(e, today, timeZone))
             .ToList();
 
-        var monthName = CultureInfo.GetCultureInfo("ru-RU").DateTimeFormat.GetMonthName(month);
+        var monthName = GetMonthBucketName(month);
 
         if (monthEvents.Count == 0)
         {
@@ -1542,7 +1557,7 @@ public sealed class CallbackHandlers
             cancellationToken: cancellationToken);
 
         var parts = data.Split(':');
-        if (parts.Length < 2 || !int.TryParse(parts[1], out var month) || month < 1 || month > 12)
+        if (parts.Length < 2 || !int.TryParse(parts[1], out var month) || month < 0 || month > 12)
         {
             await _botClient.SendNoPreview(
                 callbackQuery.Message?.Chat.Id ?? callbackQuery.From!.Id,
@@ -1561,7 +1576,7 @@ public sealed class CallbackHandlers
             cancellationToken: cancellationToken);
 
         var parts = data.Split(':');
-        if (parts.Length < 3 || !int.TryParse(parts[1], out var month) || month < 1 || month > 12 ||
+        if (parts.Length < 3 || !int.TryParse(parts[1], out var month) || month < 0 || month > 12 ||
             !int.TryParse(parts[2], out var page) || page < 0)
         {
             await _botClient.SendNoPreview(
@@ -1581,40 +1596,14 @@ public sealed class CallbackHandlers
 
         var allEvents = await _eventRepository.ListAllAsync(cancellationToken);
 
+        var today = NodaTime.Instant.FromDateTimeUtc(_clock.UtcNow).InZone(timeZone).Date;
+
         var monthEvents = allEvents
-            .Where(e =>
-            {
-                if (e.Kind == Domain.Enums.EventKind.OneOff && e.OccursAtUtc.HasValue)
-                {
-                    var eventInstant = NodaTime.Instant.FromDateTimeUtc(e.OccursAtUtc.Value.UtcDateTime);
-                    return eventInstant.InZone(timeZone).Month == month;
-                }
-
-                if (e.Kind == Domain.Enums.EventKind.Yearly && e.Month.HasValue)
-                {
-                    return e.Month.Value == month;
-                }
-
-                return false;
-            })
-            .OrderBy(e =>
-            {
-                if (e.Kind == Domain.Enums.EventKind.OneOff && e.OccursAtUtc.HasValue)
-                    return e.OccursAtUtc.Value.UtcDateTime;
-
-                var today = NodaTime.Instant.FromDateTimeUtc(DateTime.UtcNow).InZone(timeZone).Date;
-                var thisYear = new NodaTime.LocalDate(today.Year, e.Month!.Value, e.Day!.Value);
-                var nextOccurrence = thisYear >= today ? thisYear : thisYear.PlusYears(1);
-                var localDateTime = e.IsAllDay
-                    ? nextOccurrence.AtMidnight()
-                    : nextOccurrence.At(e.TimeOfDay.HasValue
-                        ? NodaTime.LocalTime.FromTicksSinceMidnight(e.TimeOfDay.Value.Ticks)
-                        : NodaTime.LocalTime.Midnight);
-                return localDateTime.InZoneLeniently(timeZone).ToInstant().ToDateTimeUtc();
-            })
+            .Where(e => GetMonthBucket(e, timeZone) == month)
+            .OrderBy(e => GetMonthBucketSortKey(e, today, timeZone))
             .ToList();
 
-        var monthName = CultureInfo.GetCultureInfo("ru-RU").DateTimeFormat.GetMonthName(month);
+        var monthName = GetMonthBucketName(month);
 
         if (monthEvents.Count == 0)
         {
@@ -1690,7 +1679,7 @@ public sealed class CallbackHandlers
             cancellationToken: cancellationToken);
 
         var parts = data.Split(':');
-        if (parts.Length < 2 || !int.TryParse(parts[1], out var month) || month < 1 || month > 12)
+        if (parts.Length < 2 || !int.TryParse(parts[1], out var month) || month < 0 || month > 12)
         {
             await _botClient.SendNoPreview(
                 callbackQuery.Message?.Chat.Id ?? callbackQuery.From!.Id,
@@ -1709,7 +1698,7 @@ public sealed class CallbackHandlers
             cancellationToken: cancellationToken);
 
         var parts = data.Split(':');
-        if (parts.Length < 3 || !int.TryParse(parts[1], out var month) || month < 1 || month > 12 ||
+        if (parts.Length < 3 || !int.TryParse(parts[1], out var month) || month < 0 || month > 12 ||
             !int.TryParse(parts[2], out var page) || page < 0)
         {
             await _botClient.SendNoPreview(
@@ -1733,44 +1722,11 @@ public sealed class CallbackHandlers
         var allUpcomingEvents = await _listUpcomingItems.ExecuteAsync(cancellationToken);
         
         var monthEvents = allUpcomingEvents
-            .Where(e =>
-            {
-                var eventMonth = 0;
-
-                if (e.Kind == Domain.Enums.EventKind.OneOff && e.OccursAtUtc.HasValue)
-                {
-                    var eventInstant = NodaTime.Instant.FromDateTimeUtc(e.OccursAtUtc.Value.UtcDateTime);
-                    var eventInZone = eventInstant.InZone(timeZone);
-                    eventMonth = eventInZone.Month;
-                }
-                else if (e.Kind == Domain.Enums.EventKind.Yearly && e.Month.HasValue && e.Day.HasValue)
-                {
-                    var thisYear = new NodaTime.LocalDate(today.Year, e.Month.Value, e.Day.Value);
-                    var nextOccurrence = thisYear >= today ? thisYear : thisYear.PlusYears(1);
-                    eventMonth = nextOccurrence.Month;
-                }
-
-                return eventMonth == month;
-            })
-            .OrderBy(e =>
-            {
-                if (e.Kind == Domain.Enums.EventKind.OneOff && e.OccursAtUtc.HasValue)
-                {
-                    return e.OccursAtUtc.Value.UtcDateTime;
-                }
-
-                var thisYear = new NodaTime.LocalDate(today.Year, e.Month!.Value, e.Day!.Value);
-                var nextOccurrence = thisYear >= today ? thisYear : thisYear.PlusYears(1);
-                var localDateTime = e.IsAllDay
-                    ? nextOccurrence.AtMidnight()
-                    : nextOccurrence.At(e.TimeOfDay.HasValue ? NodaTime.LocalTime.FromTicksSinceMidnight(e.TimeOfDay.Value.Ticks) : NodaTime.LocalTime.Midnight);
-                var zonedDateTime = localDateTime.InZoneLeniently(timeZone);
-                var instant = zonedDateTime.ToInstant();
-                return instant.ToDateTimeUtc();
-            })
+            .Where(e => GetMonthBucket(e, timeZone) == month)
+            .OrderBy(e => GetMonthBucketSortKey(e, today, timeZone))
             .ToList();
 
-        var monthName = CultureInfo.GetCultureInfo("ru-RU").DateTimeFormat.GetMonthName(month);
+        var monthName = GetMonthBucketName(month);
 
         if (monthEvents.Count == 0)
         {

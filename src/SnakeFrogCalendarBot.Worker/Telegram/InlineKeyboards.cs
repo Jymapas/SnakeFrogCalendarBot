@@ -217,6 +217,12 @@ public static class InlineKeyboards
             buttons.Add(row);
         }
 
+        // Повторяющиеся события не привязаны к одному месяцу — им отдельная корзина.
+        buttons.Add(new List<InlineKeyboardButton>
+        {
+            InlineKeyboardButton.WithCallbackData("🔁 Повторяющиеся", "event_edit_month:0")
+        });
+
         return new InlineKeyboardMarkup(buttons);
     }
 
@@ -243,6 +249,12 @@ public static class InlineKeyboards
             }
             buttons.Add(row);
         }
+
+        // Повторяющиеся события не привязаны к одному месяцу — им отдельная корзина.
+        buttons.Add(new List<InlineKeyboardButton>
+        {
+            InlineKeyboardButton.WithCallbackData("🔁 Повторяющиеся", "event_delete_month:0")
+        });
 
         return new InlineKeyboardMarkup(buttons);
     }
@@ -271,6 +283,12 @@ public static class InlineKeyboards
             }
             buttons.Add(row);
         }
+
+        // Повторяющиеся события не привязаны к одному месяцу — им отдельная корзина.
+        buttons.Add(new List<InlineKeyboardButton>
+        {
+            InlineKeyboardButton.WithCallbackData("🔁 Повторяющиеся", "event_list_month:0")
+        });
 
         return new InlineKeyboardMarkup(buttons);
     }
