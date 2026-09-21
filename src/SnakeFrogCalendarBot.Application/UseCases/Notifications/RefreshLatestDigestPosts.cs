@@ -3,6 +3,7 @@ using SnakeFrogCalendarBot.Application.Abstractions.Persistence;
 using SnakeFrogCalendarBot.Application.Abstractions.Telegram;
 using SnakeFrogCalendarBot.Application.Dto;
 using SnakeFrogCalendarBot.Application.Formatting;
+using SnakeFrogCalendarBot.Application.Recurrence;
 using SnakeFrogCalendarBot.Domain.Entities;
 using SnakeFrogCalendarBot.Domain.Enums;
 
@@ -30,7 +31,7 @@ public sealed class RefreshLatestDigestPosts
     public Task ForBirthdayAsync(Birthday birthday, CancellationToken cancellationToken)
     {
         return RefreshAsync(
-            post => DigestOccurrenceResolver.TryResolve(
+            post => RecurrenceExpander.TryResolve(
                 birthday,
                 ToLocalDate(post.PeriodStartLocal),
                 ToLocalDate(post.PeriodEndLocal),
@@ -50,14 +51,12 @@ public sealed class RefreshLatestDigestPosts
                 var lookaheadCutoff = post.DigestType == DigestType.Daily
                     ? DigestPeriodCalculator.DailyLookaheadCutoff
                     : (LocalTime?)null;
-                return DigestOccurrenceResolver.TryResolve(
+                return RecurrenceExpander.Expand(
                     eventEntity,
                     ToLocalDate(post.PeriodStartLocal),
                     ToLocalDate(post.PeriodEndLocal),
                     timeZone,
-                    out _,
-                    out _,
-                    lookaheadCutoff);
+                    lookaheadCutoff).Count > 0;
             },
             cancellationToken);
     }
