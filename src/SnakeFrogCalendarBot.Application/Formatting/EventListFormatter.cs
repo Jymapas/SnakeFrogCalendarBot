@@ -2,19 +2,23 @@ using System.Globalization;
 using System.Text;
 using NodaTime;
 using SnakeFrogCalendarBot.Application.Abstractions.Time;
+using SnakeFrogCalendarBot.Application.Recurrence;
 using SnakeFrogCalendarBot.Domain.Entities;
 using SnakeFrogCalendarBot.Domain.Enums;
+using IClock = SnakeFrogCalendarBot.Application.Abstractions.Time.IClock;
 
 namespace SnakeFrogCalendarBot.Application.Formatting;
 
 public sealed class EventListFormatter
 {
     private readonly ITimeZoneProvider _timeZoneProvider;
+    private readonly IClock _clock;
     private readonly CultureInfo _culture = CultureInfo.GetCultureInfo("ru-RU");
 
-    public EventListFormatter(ITimeZoneProvider timeZoneProvider)
+    public EventListFormatter(ITimeZoneProvider timeZoneProvider, IClock clock)
     {
         _timeZoneProvider = timeZoneProvider;
+        _clock = clock;
     }
 
     public string Format(IReadOnlyList<Event> events, IReadOnlyDictionary<int, Attachment?> eventAttachments)
@@ -26,6 +30,7 @@ public sealed class EventListFormatter
 
         var builder = new StringBuilder();
         var timeZone = DateTimeZoneProviders.Tzdb[_timeZoneProvider.GetTimeZoneId()];
+        var today = Instant.FromDateTimeUtc(_clock.UtcNow).InZone(timeZone).Date;
 
         for (var index = 0; index < events.Count; index++)
         {
@@ -61,6 +66,20 @@ public sealed class EventListFormatter
                     builder.Append(time.ToString("HH:mm", CultureInfo.InvariantCulture));
                 }
             }
+            else if (eventEntity.IsRecurringSchedule)
+            {
+                var next = EventNextOccurrenceCalculator.TryGetNextLocalOccurrence(eventEntity, today, timeZone);
+                if (next.HasValue)
+                {
+                    builder.Append(next.Value.Date.ToString("d MMMM", _culture));
+
+                    if (next.Value.Time.HasValue)
+                    {
+                        builder.Append(" ");
+                        builder.Append(next.Value.Time.Value.ToString("HH:mm", CultureInfo.InvariantCulture));
+                    }
+                }
+            }
 
             builder.Append(" — ");
             builder.Append(eventEntity.Title);
@@ -71,9 +90,12 @@ public sealed class EventListFormatter
                 builder.Append(attachment.FileName);
             }
 
-            if (eventEntity.Kind == EventKind.Yearly)
+            var recurrence = RecurrenceDescriber.DescribeFull(eventEntity);
+            if (recurrence is not null)
             {
-                builder.Append(" (ежегодно)");
+                builder.Append(" (");
+                builder.Append(recurrence);
+                builder.Append(")");
             }
 
             if (index < events.Count - 1)
