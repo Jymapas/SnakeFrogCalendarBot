@@ -199,3 +199,30 @@ select {
   font-size: 16px;
   font-weight: 500;
 }
+
+/* Weekday multi-select for recurring events */
+.weekday-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.weekday {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--tg-theme-hint-color, #c7c7cc);
+  border-radius: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.weekday input {
+  margin: 0;
+}
+
+.weekday:has(input:checked) {
+  border-color: var(--tg-theme-button-color, #2481cc);
+  background: var(--tg-theme-secondary-bg-color, #f1f1f4);
+}
