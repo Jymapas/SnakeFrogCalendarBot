@@ -31,6 +31,7 @@ public sealed class MessageHandlers
     private readonly IConversationStateRepository _conversationRepository;
     private readonly IBirthdayDateParser _birthdayDateParser;
     private readonly IDateTimeParser _dateTimeParser;
+    private readonly IRecurrenceParser _recurrenceParser;
     private readonly CreateBirthday _createBirthday;
     private readonly CreateEvent _createEvent;
     private readonly UpdateEvent _updateEvent;
@@ -50,6 +51,7 @@ public sealed class MessageHandlers
         IConversationStateRepository conversationRepository,
         IBirthdayDateParser birthdayDateParser,
         IDateTimeParser dateTimeParser,
+        IRecurrenceParser recurrenceParser,
         CreateBirthday createBirthday,
         CreateEvent createEvent,
         UpdateEvent updateEvent,
@@ -68,6 +70,7 @@ public sealed class MessageHandlers
         _conversationRepository = conversationRepository;
         _birthdayDateParser = birthdayDateParser;
         _dateTimeParser = dateTimeParser;
+        _recurrenceParser = recurrenceParser;
         _createBirthday = createBirthday;
         _createEvent = createEvent;
         _updateEvent = updateEvent;
@@ -1735,6 +1738,13 @@ public sealed class MessageHandlers
         }
 
         var dateTimeLine = lines[1];
+
+        if (TryFillRecurrenceFromLine(dateTimeLine, eventData))
+        {
+            FillExtraEventLines(lines, eventData);
+            return true;
+        }
+
         var kind = ExtractEventKindFromLine(dateTimeLine, out var dateTimeString);
 
         if (!_dateTimeParser.TryParse(dateTimeString, out var parseResult) || parseResult is null)
@@ -1757,6 +1767,17 @@ public sealed class MessageHandlers
 
         eventData.Kind = kind;
 
+        FillExtraEventLines(lines, eventData);
+
+        return true;
+    }
+
+    /// <summary>
+    /// Разбирает строки после даты: маркеры «место:», «ссылка:», «описание:», голые ссылки,
+    /// остальное по очереди — описание, место, ссылка.
+    /// </summary>
+    private static void FillExtraEventLines(string[] lines, EventConversationData eventData)
+    {
         for (int i = 2; i < lines.Length; i++)
         {
             var line = lines[i];
@@ -1811,6 +1832,39 @@ public sealed class MessageHandlers
                     eventData.Link = line;
                 }
             }
+        }
+
+    }
+
+    /// <summary>
+    /// Пытается прочитать вторую строку как расписание повторения («каждый вторник 19:00»).
+    /// Дата начала по умолчанию — сегодня в локальной таймзоне.
+    /// </summary>
+    private bool TryFillRecurrenceFromLine(string line, EventConversationData eventData)
+    {
+        if (!_recurrenceParser.TryParse(line, out var recurrence) || recurrence is null)
+        {
+            return false;
+        }
+
+        var timeZone = DateTimeZoneProviders.Tzdb[_timeZoneProvider.GetTimeZoneId()];
+        var today = Instant.FromDateTimeUtc(_clock.UtcNow).InZone(timeZone).Date;
+
+        eventData.StartDate = new DateOnly(today.Year, today.Month, today.Day);
+        eventData.Hour = recurrence.Hour;
+        eventData.Minute = recurrence.Minute;
+        eventData.IsAllDay = !recurrence.Hour.HasValue || !recurrence.Minute.HasValue;
+
+        if (recurrence.Kind == EventKind.Weekly)
+        {
+            eventData.Kind = "Weekly";
+            eventData.DaysOfWeekMask = recurrence.DaysOfWeekMask;
+        }
+        else
+        {
+            eventData.Kind = "Interval";
+            eventData.IntervalCount = recurrence.IntervalCount;
+            eventData.IntervalUnit = recurrence.IntervalUnit?.ToString();
         }
 
         return true;

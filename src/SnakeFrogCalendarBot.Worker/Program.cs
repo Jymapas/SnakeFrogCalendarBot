@@ -145,6 +145,7 @@ try
             });
             services.AddSingleton<IBirthdayDateParser, RuBirthdayDateParser>();
             services.AddSingleton<IDateTimeParser, RuDateTimeParser>();
+            services.AddSingleton<IRecurrenceParser, RuRecurrenceParser>();
             services.AddSingleton<BirthdayListFormatter>();
             services.AddSingleton<EventListFormatter>();
             services.AddSingleton<DigestFormatter>();
