@@ -687,7 +687,7 @@ public sealed class CallbackHandlers
             callbackQuery.Id,
             cancellationToken: cancellationToken);
 
-        var keyboard = CreateEventEditKeyboard(eventId);
+        var keyboard = CreateEventEditKeyboard(eventEntity);
         var text = $"Редактирование события: {eventEntity.Title}\n\nВыберите поле для редактирования:";
 
         await _botClient.SendNoPreview(
@@ -695,6 +695,60 @@ public sealed class CallbackHandlers
             text,
             replyMarkup: keyboard,
             cancellationToken: cancellationToken);
+    }
+
+    /// <summary>
+    /// Запускает переввод расписания повторяющегося события. Тип повторения при этом не меняется:
+    /// чтобы превратить еженедельное в разовое, событие нужно пересоздать.
+    /// </summary>
+    private async Task StartScheduleEditAsync(
+        CallbackQuery callbackQuery,
+        Domain.Entities.Event eventEntity,
+        DateTime now,
+        CancellationToken cancellationToken)
+    {
+        var chatId = callbackQuery.Message?.Chat.Id ?? callbackQuery.From!.Id;
+        var eventId = eventEntity.Id;
+
+        var conversationData = new EventEditConversationData
+        {
+            EventId = eventId,
+            Field = "schedule",
+            DaysOfWeekMask = eventEntity.DaysOfWeekMask,
+            IntervalCount = eventEntity.IntervalCount,
+            IntervalUnit = eventEntity.IntervalUnit?.ToString(),
+            StartDate = eventEntity.StartDateLocal,
+            IsAllDay = eventEntity.IsAllDay
+        };
+
+        var step = eventEntity.Kind == Domain.Enums.EventKind.Weekly
+            ? $"{EventEditConversationSteps.Weekdays}:{eventId}"
+            : $"{EventEditConversationSteps.IntervalCount}:{eventId}";
+
+        var state = new ConversationState(
+            callbackQuery.From!.Id,
+            ConversationNames.EventEdit,
+            step,
+            JsonSerializer.Serialize(conversationData, EventJsonOptions),
+            now);
+
+        await _conversationRepository.UpsertAsync(state, cancellationToken);
+
+        if (eventEntity.Kind == Domain.Enums.EventKind.Weekly)
+        {
+            await _botClient.SendNoPreview(
+                chatId,
+                "Выберите дни недели и нажмите «Готово»",
+                replyMarkup: InlineKeyboards.WeekdaysKeyboard(eventEntity.DaysOfWeekMask ?? 0),
+                cancellationToken: cancellationToken);
+        }
+        else
+        {
+            await _botClient.SendNoPreview(
+                chatId,
+                "Как часто повторять? Введите число, например 2 (каждые два периода)",
+                cancellationToken: cancellationToken);
+        }
     }
 
     private async Task HandleEventEditFieldAsync(CallbackQuery callbackQuery, CancellationToken cancellationToken)
@@ -725,6 +779,13 @@ public sealed class CallbackHandlers
             cancellationToken: cancellationToken);
 
         var now = _clock.UtcNow;
+
+        if (field == "schedule")
+        {
+            await StartScheduleEditAsync(callbackQuery, eventEntity, now, cancellationToken);
+            return;
+        }
+
         var state = new ConversationState(
             callbackQuery.From!.Id,
             ConversationNames.EventEdit,
@@ -743,11 +804,12 @@ public sealed class CallbackHandlers
             "date" => "Введите новую дату (например, 7 января 2026 или 2026-01-07):",
             "time" => "Введите новое время (HH:mm):",
             "isAllDay" => "Это событие на весь день? (да/нет):",
+            "repeat-until" => "Введите дату окончания повторения или 'пропустить' — повторять бессрочно:",
             _ => "Введите новое значение:"
         };
 
         InlineKeyboardMarkup? keyboard = null;
-        if (field is "description" or "place" or "link")
+        if (field is "description" or "place" or "link" or "repeat-until")
         {
             keyboard = CreateSkipKeyboardForEdit(ConversationNames.EventEdit, $"{field}:{eventId}");
         }
@@ -999,19 +1061,41 @@ public sealed class CallbackHandlers
         }
     }
 
-    private static InlineKeyboardMarkup CreateEventEditKeyboard(int eventId)
+    private static InlineKeyboardMarkup CreateEventEditKeyboard(Domain.Entities.Event eventEntity)
     {
-        return new InlineKeyboardMarkup(new[]
+        var eventId = eventEntity.Id;
+        var buttons = new List<List<InlineKeyboardButton>>
         {
-            new[] { InlineKeyboardButton.WithCallbackData("✏️ Название", $"event_edit_field:{eventId}:title") },
-            new[] { InlineKeyboardButton.WithCallbackData("🗓 Дата / время", $"event_edit_field:{eventId}:date") },
-            new[] { InlineKeyboardButton.WithCallbackData("📝 Описание", $"event_edit_field:{eventId}:description") },
-            new[] { InlineKeyboardButton.WithCallbackData("📍 Место", $"event_edit_field:{eventId}:place") },
-            new[] { InlineKeyboardButton.WithCallbackData("🔗 Ссылка", $"event_edit_field:{eventId}:link") },
-            new[] { InlineKeyboardButton.WithCallbackData("📎 Файл", $"event_attach:{eventId}") },
-            new[] { InlineKeyboardButton.WithCallbackData("🗑 Удалить", $"event_delete:{eventId}") },
-            new[] { InlineKeyboardButton.WithCallbackData("❌ Отмена", "cancel") }
-        });
+            new() { InlineKeyboardButton.WithCallbackData("✏️ Название", $"event_edit_field:{eventId}:title") }
+        };
+
+        if (eventEntity.IsRecurringSchedule)
+        {
+            buttons.Add(new List<InlineKeyboardButton>
+            {
+                InlineKeyboardButton.WithCallbackData("🔁 Расписание", $"event_edit_field:{eventId}:schedule")
+            });
+            buttons.Add(new List<InlineKeyboardButton>
+            {
+                InlineKeyboardButton.WithCallbackData("📆 Дата окончания", $"event_edit_field:{eventId}:repeat-until")
+            });
+        }
+        else
+        {
+            buttons.Add(new List<InlineKeyboardButton>
+            {
+                InlineKeyboardButton.WithCallbackData("🗓 Дата / время", $"event_edit_field:{eventId}:date")
+            });
+        }
+
+        buttons.Add(new List<InlineKeyboardButton> { InlineKeyboardButton.WithCallbackData("📝 Описание", $"event_edit_field:{eventId}:description") });
+        buttons.Add(new List<InlineKeyboardButton> { InlineKeyboardButton.WithCallbackData("📍 Место", $"event_edit_field:{eventId}:place") });
+        buttons.Add(new List<InlineKeyboardButton> { InlineKeyboardButton.WithCallbackData("🔗 Ссылка", $"event_edit_field:{eventId}:link") });
+        buttons.Add(new List<InlineKeyboardButton> { InlineKeyboardButton.WithCallbackData("📎 Файл", $"event_attach:{eventId}") });
+        buttons.Add(new List<InlineKeyboardButton> { InlineKeyboardButton.WithCallbackData("🗑 Удалить", $"event_delete:{eventId}") });
+        buttons.Add(new List<InlineKeyboardButton> { InlineKeyboardButton.WithCallbackData("❌ Отмена", "cancel") });
+
+        return new InlineKeyboardMarkup(buttons);
     }
 
     private static InlineKeyboardMarkup CreateBirthdayEditKeyboard(int birthdayId)
@@ -1137,7 +1221,8 @@ public sealed class CallbackHandlers
         }
 
         var conversationName = parts[1];
-        var step = parts[2];
+        // Шаг редактирования сам составной («{field}:{eventId}»), поэтому склеиваем хвост обратно.
+        var step = string.Join(':', parts.Skip(2));
 
         var chatId = callbackQuery.Message?.Chat.Id ?? callbackQuery.From!.Id;
         var virtualMessage = new Message
@@ -1172,7 +1257,9 @@ public sealed class CallbackHandlers
         await _botClient.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: cancellationToken);
 
         var state = await _conversationRepository.GetByUserIdAsync(callbackQuery.From!.Id, cancellationToken);
-        if (state is null || state.ConversationName != ConversationNames.EventAdd || state.Step != expectedStep)
+        if (state is null
+            || state.ConversationName is not (ConversationNames.EventAdd or ConversationNames.EventEdit)
+            || state.Step != expectedStep)
         {
             return;
         }
@@ -1201,21 +1288,14 @@ public sealed class CallbackHandlers
         }
 
         var state = await _conversationRepository.GetByUserIdAsync(callbackQuery.From!.Id, cancellationToken);
-        if (state is null || state.ConversationName != ConversationNames.EventAdd
-            || state.Step != EventConversationSteps.Weekdays)
+        if (!IsWeekdaySelectionStep(state))
         {
             return;
         }
 
-        var conversationData = DeserializeEventData(state.StateJson);
-        var mask = (conversationData.DaysOfWeekMask ?? 0) ^ (1 << bit);
-        conversationData.DaysOfWeekMask = mask;
-
-        state.Update(
-            EventConversationSteps.Weekdays,
-            JsonSerializer.Serialize(conversationData, EventJsonOptions),
-            _clock.UtcNow);
-        await _conversationRepository.UpsertAsync(state, cancellationToken);
+        var mask = (ReadWeekdayMask(state!) ?? 0) ^ (1 << bit);
+        WriteWeekdayMask(state!, mask);
+        await _conversationRepository.UpsertAsync(state!, cancellationToken);
 
         if (callbackQuery.Message is not null)
         {
@@ -1230,15 +1310,13 @@ public sealed class CallbackHandlers
     private async Task HandleWeekdaysDoneAsync(CallbackQuery callbackQuery, CancellationToken cancellationToken)
     {
         var state = await _conversationRepository.GetByUserIdAsync(callbackQuery.From!.Id, cancellationToken);
-        if (state is null || state.ConversationName != ConversationNames.EventAdd
-            || state.Step != EventConversationSteps.Weekdays)
+        if (!IsWeekdaySelectionStep(state))
         {
             await _botClient.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: cancellationToken);
             return;
         }
 
-        var conversationData = DeserializeEventData(state.StateJson);
-        var mask = conversationData.DaysOfWeekMask ?? 0;
+        var mask = ReadWeekdayMask(state!) ?? 0;
 
         if (mask == 0)
         {
@@ -1250,11 +1328,62 @@ public sealed class CallbackHandlers
             return;
         }
 
-        await ForwardEventAddChoiceAsync(
-            callbackQuery, EventConversationSteps.Weekdays, $"mask:{mask}", cancellationToken);
+        await ForwardEventAddChoiceAsync(callbackQuery, state!.Step, $"mask:{mask}", cancellationToken);
     }
 
     // Должны совпадать с настройками в MessageHandlers: состояние диалога пишут оба обработчика.
+    private static bool IsWeekdaySelectionStep(ConversationState? state)
+    {
+        if (state is null)
+        {
+            return false;
+        }
+
+        return state.ConversationName switch
+        {
+            ConversationNames.EventAdd => state.Step == EventConversationSteps.Weekdays,
+            ConversationNames.EventEdit => state.Step.StartsWith(EventEditConversationSteps.Weekdays + ":", StringComparison.Ordinal),
+            _ => false
+        };
+    }
+
+    private static int? ReadWeekdayMask(ConversationState state)
+    {
+        return state.ConversationName == ConversationNames.EventAdd
+            ? DeserializeEventData(state.StateJson).DaysOfWeekMask
+            : DeserializeEventEditData(state.StateJson).DaysOfWeekMask;
+    }
+
+    private void WriteWeekdayMask(ConversationState state, int mask)
+    {
+        string json;
+        if (state.ConversationName == ConversationNames.EventAdd)
+        {
+            var data = DeserializeEventData(state.StateJson);
+            data.DaysOfWeekMask = mask;
+            json = JsonSerializer.Serialize(data, EventJsonOptions);
+        }
+        else
+        {
+            var data = DeserializeEventEditData(state.StateJson);
+            data.DaysOfWeekMask = mask;
+            json = JsonSerializer.Serialize(data, EventJsonOptions);
+        }
+
+        state.Update(state.Step, json, _clock.UtcNow);
+    }
+
+    private static EventEditConversationData DeserializeEventEditData(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return new EventEditConversationData();
+        }
+
+        return JsonSerializer.Deserialize<EventEditConversationData>(json, EventJsonOptions)
+            ?? new EventEditConversationData();
+    }
+
     private static readonly JsonSerializerOptions EventJsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,

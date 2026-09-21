@@ -71,6 +71,36 @@ public sealed class UpdateEvent
                     command.IsAllDay ?? false,
                     now);
                 break;
+            case "weeklySchedule":
+                if (!command.DaysOfWeekMask.HasValue || !command.StartDateLocal.HasValue)
+                {
+                    throw new InvalidOperationException("DaysOfWeekMask and StartDateLocal are required for weekly schedule.");
+                }
+
+                eventEntity.UpdateWeeklySchedule(
+                    command.DaysOfWeekMask.Value,
+                    command.StartDateLocal.Value,
+                    command.TimeOfDay,
+                    command.IsAllDay ?? false,
+                    now);
+                break;
+            case "intervalSchedule":
+                if (!command.IntervalCount.HasValue || !command.IntervalUnit.HasValue || !command.StartDateLocal.HasValue)
+                {
+                    throw new InvalidOperationException("IntervalCount, IntervalUnit and StartDateLocal are required for interval schedule.");
+                }
+
+                eventEntity.UpdateIntervalSchedule(
+                    command.IntervalCount.Value,
+                    command.IntervalUnit.Value,
+                    command.StartDateLocal.Value,
+                    command.TimeOfDay,
+                    command.IsAllDay ?? false,
+                    now);
+                break;
+            case "repeatUntil":
+                eventEntity.UpdateRepeatUntil(command.RepeatUntilLocal, now);
+                break;
             case "isAllDay":
                 if (!command.IsAllDay.HasValue)
                 {
@@ -87,7 +117,10 @@ public sealed class UpdateEvent
 
         try
         {
+            // Изменение расписания может вынести событие из уже опубликованного поста,
+            // а ForEventAsync ищет посты по НОВОМУ расписанию и такой пост не найдёт.
             var refreshTask = command.Field is "occursAtUtc" or "yearlyDate"
+                or "weeklySchedule" or "intervalSchedule" or "repeatUntil"
                 ? _refreshLatestDigestPosts.ForAllAsync(cancellationToken)
                 : _refreshLatestDigestPosts.ForEventAsync(eventEntity, cancellationToken);
             await refreshTask;
@@ -112,4 +145,9 @@ public sealed record UpdateEventCommand
     public int? Day { get; init; }
     public TimeSpan? TimeOfDay { get; init; }
     public bool? IsAllDay { get; init; }
+    public int? DaysOfWeekMask { get; init; }
+    public int? IntervalCount { get; init; }
+    public RecurrenceUnit? IntervalUnit { get; init; }
+    public DateOnly? StartDateLocal { get; init; }
+    public DateOnly? RepeatUntilLocal { get; init; }
 }

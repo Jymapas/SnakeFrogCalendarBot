@@ -12,6 +12,10 @@ public sealed class EventEditConversationData
     public int? Minute { get; set; }
     public bool? IsAllDay { get; set; }
     public bool? HasYear { get; set; }
+    public int? DaysOfWeekMask { get; set; }
+    public int? IntervalCount { get; set; }
+    public string? IntervalUnit { get; set; }
+    public DateOnly? StartDate { get; set; }
     public string? Description { get; set; }
     public string? Place { get; set; }
     public string? Link { get; set; }

@@ -806,6 +806,82 @@ public sealed class MessageHandlers
         }
     }
 
+    private async Task AskEditStartDateAsync(
+        ConversationState state,
+        EventEditConversationData data,
+        long chatId,
+        int eventId,
+        CancellationToken cancellationToken)
+    {
+        state.Update(
+            $"{EventEditConversationSteps.StartDate}:{eventId}",
+            SerializeEventEditData(data),
+            _clock.UtcNow);
+        await _conversationRepository.UpsertAsync(state, cancellationToken);
+        await _botClient.SendNoPreview(
+            chatId,
+            "С какой даты начинать? (например, 7 января 2026 или 2026-01-07)",
+            cancellationToken: cancellationToken);
+    }
+
+    /// <summary>
+    /// Сохраняет новое расписание повторяющегося события. Тип повторения при этом не меняется.
+    /// </summary>
+    private async Task UpdateEventScheduleAsync(
+        Domain.Entities.Event eventEntity,
+        EventEditConversationData data,
+        long chatId,
+        long userId,
+        CancellationToken cancellationToken)
+    {
+        if (data.StartDate is null)
+        {
+            throw new InvalidOperationException("StartDate is required for recurring schedule.");
+        }
+
+        var isAllDay = data.IsAllDay == true;
+        TimeSpan? timeOfDay = isAllDay || !data.Hour.HasValue || !data.Minute.HasValue
+            ? null
+            : new TimeSpan(data.Hour.Value, data.Minute.Value, 0);
+
+        UpdateEventCommand command;
+
+        if (eventEntity.Kind == Domain.Enums.EventKind.Weekly)
+        {
+            command = new UpdateEventCommand
+            {
+                EventId = eventEntity.Id,
+                Field = "weeklySchedule",
+                DaysOfWeekMask = data.DaysOfWeekMask ?? eventEntity.DaysOfWeekMask,
+                StartDateLocal = data.StartDate,
+                TimeOfDay = timeOfDay,
+                IsAllDay = isAllDay
+            };
+        }
+        else
+        {
+            command = new UpdateEventCommand
+            {
+                EventId = eventEntity.Id,
+                Field = "intervalSchedule",
+                IntervalCount = data.IntervalCount ?? eventEntity.IntervalCount,
+                IntervalUnit = Enum.TryParse<Domain.Enums.RecurrenceUnit>(data.IntervalUnit, out var unit)
+                    ? unit
+                    : eventEntity.IntervalUnit,
+                StartDateLocal = data.StartDate,
+                TimeOfDay = timeOfDay,
+                IsAllDay = isAllDay
+            };
+        }
+
+        await _updateEvent.ExecuteAsync(command, cancellationToken);
+        await _conversationRepository.DeleteAsync(userId, cancellationToken);
+        await _botClient.SendNoPreview(
+            chatId,
+            "Расписание обновлено",
+            cancellationToken: cancellationToken);
+    }
+
     private static bool IsRecurringKind(string? kind) => kind is "Weekly" or "Interval";
 
     /// <summary>
@@ -1157,6 +1233,164 @@ public sealed class MessageHandlers
                     data.Hour = timeResult.Hour;
                     data.Minute = timeResult.Minute;
                     await UpdateEventDateAsync(eventId, data, message.Chat.Id, state.UserId, cancellationToken);
+                    break;
+
+                case EventEditConversationSteps.Weekdays:
+                    var editMask = ParseWeekdayMask(text);
+                    if (editMask is null or 0)
+                    {
+                        await _botClient.SendNoPreview(
+                            message.Chat.Id,
+                            "Выберите хотя бы один день недели кнопками",
+                            replyMarkup: InlineKeyboards.WeekdaysKeyboard(
+                                DeserializeEventEditData(state.StateJson).DaysOfWeekMask ?? 0),
+                            cancellationToken: cancellationToken);
+                        return;
+                    }
+
+                    data = DeserializeEventEditData(state.StateJson);
+                    data.EventId = eventId;
+                    data.DaysOfWeekMask = editMask;
+                    await AskEditStartDateAsync(state, data, message.Chat.Id, eventId, cancellationToken);
+                    break;
+
+                case EventEditConversationSteps.IntervalCount:
+                    if (!int.TryParse(text, out var editIntervalCount) || editIntervalCount < 1)
+                    {
+                        await _botClient.SendNoPreview(
+                            message.Chat.Id,
+                            "Введите целое число не меньше 1",
+                            cancellationToken: cancellationToken);
+                        return;
+                    }
+
+                    data = DeserializeEventEditData(state.StateJson);
+                    data.EventId = eventId;
+                    data.IntervalCount = editIntervalCount;
+                    state.Update(
+                        $"{EventEditConversationSteps.IntervalUnit}:{eventId}",
+                        SerializeEventEditData(data),
+                        _clock.UtcNow);
+                    await _conversationRepository.UpsertAsync(state, cancellationToken);
+                    await _botClient.SendNoPreview(
+                        message.Chat.Id,
+                        $"Каждые {editIntervalCount} — чего именно?",
+                        replyMarkup: InlineKeyboards.IntervalUnitKeyboard(),
+                        cancellationToken: cancellationToken);
+                    break;
+
+                case EventEditConversationSteps.IntervalUnit:
+                    var editUnit = ParseRecurrenceUnit(text);
+                    if (editUnit is null)
+                    {
+                        await _botClient.SendNoPreview(
+                            message.Chat.Id,
+                            "Выберите единицу кнопкой: дни, недели, месяцы или годы",
+                            replyMarkup: InlineKeyboards.IntervalUnitKeyboard(),
+                            cancellationToken: cancellationToken);
+                        return;
+                    }
+
+                    data = DeserializeEventEditData(state.StateJson);
+                    data.EventId = eventId;
+                    data.IntervalUnit = editUnit;
+                    await AskEditStartDateAsync(state, data, message.Chat.Id, eventId, cancellationToken);
+                    break;
+
+                case EventEditConversationSteps.StartDate:
+                    if (!_dateTimeParser.TryParse(text, out var editStart) || editStart is null || editStart.Year == 0)
+                    {
+                        await _botClient.SendNoPreview(
+                            message.Chat.Id,
+                            "Не удалось распознать дату. Формат: 7 января 2026 или 2026-01-07",
+                            cancellationToken: cancellationToken);
+                        return;
+                    }
+
+                    data = DeserializeEventEditData(state.StateJson);
+                    data.EventId = eventId;
+                    data.StartDate = new DateOnly(editStart.Year, editStart.Month, editStart.Day);
+
+                    if (editStart.Hour.HasValue && editStart.Minute.HasValue)
+                    {
+                        data.IsAllDay = false;
+                        data.Hour = editStart.Hour;
+                        data.Minute = editStart.Minute;
+                        await UpdateEventScheduleAsync(eventEntity, data, message.Chat.Id, state.UserId, cancellationToken);
+                    }
+                    else
+                    {
+                        state.Update(
+                            $"{EventEditConversationSteps.ScheduleTime}:{eventId}",
+                            SerializeEventEditData(data),
+                            _clock.UtcNow);
+                        await _conversationRepository.UpsertAsync(state, cancellationToken);
+                        await _botClient.SendNoPreview(
+                            message.Chat.Id,
+                            "Введите время (HH:mm) или 'весь день'",
+                            cancellationToken: cancellationToken);
+                    }
+                    break;
+
+                case EventEditConversationSteps.ScheduleTime:
+                    data = DeserializeEventEditData(state.StateJson);
+                    data.EventId = eventId;
+
+                    if (text.Contains("весь день", StringComparison.OrdinalIgnoreCase) || IsSkip(text))
+                    {
+                        data.IsAllDay = true;
+                        data.Hour = null;
+                        data.Minute = null;
+                    }
+                    else
+                    {
+                        if (!_dateTimeParser.TryParse(text, out var editTime) || editTime is null
+                            || !editTime.Hour.HasValue || !editTime.Minute.HasValue)
+                        {
+                            await _botClient.SendNoPreview(
+                                message.Chat.Id,
+                                "Не удалось распознать время. Формат: HH:mm или 'весь день'",
+                                cancellationToken: cancellationToken);
+                            return;
+                        }
+
+                        data.IsAllDay = false;
+                        data.Hour = editTime.Hour;
+                        data.Minute = editTime.Minute;
+                    }
+
+                    await UpdateEventScheduleAsync(eventEntity, data, message.Chat.Id, state.UserId, cancellationToken);
+                    break;
+
+                case EventEditConversationSteps.RepeatUntil:
+                    DateOnly? repeatUntil = null;
+                    if (!IsSkip(text))
+                    {
+                        if (!_dateTimeParser.TryParse(text, out var editUntil) || editUntil is null || editUntil.Year == 0)
+                        {
+                            await _botClient.SendNoPreview(
+                                message.Chat.Id,
+                                "Не удалось распознать дату окончания. Формат: 31 декабря 2026 или 'пропустить'",
+                                cancellationToken: cancellationToken);
+                            return;
+                        }
+
+                        repeatUntil = new DateOnly(editUntil.Year, editUntil.Month, editUntil.Day);
+                    }
+
+                    await _updateEvent.ExecuteAsync(
+                        new UpdateEventCommand
+                        {
+                            EventId = eventId,
+                            Field = "repeatUntil",
+                            RepeatUntilLocal = repeatUntil
+                        },
+                        cancellationToken);
+                    await _conversationRepository.DeleteAsync(state.UserId, cancellationToken);
+                    await _botClient.SendNoPreview(
+                        message.Chat.Id,
+                        repeatUntil is null ? "Повторение снова бессрочное" : "Дата окончания обновлена",
+                        cancellationToken: cancellationToken);
                     break;
 
                 default:
