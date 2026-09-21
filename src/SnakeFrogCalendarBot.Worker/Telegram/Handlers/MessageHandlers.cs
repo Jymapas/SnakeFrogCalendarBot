@@ -721,17 +721,16 @@ public sealed class MessageHandlers
             var instant = zonedDateTime.ToInstant();
             var occursAtUtc = instant.ToDateTimeOffset();
 
-            command = new CreateEventCommand(
-                data.Title,
-                EventKind.OneOff,
-                data.IsAllDay == true,
-                occursAtUtc,
-                null,
-                null,
-                null,
-                data.Description,
-                data.Place,
-                data.Link);
+            command = new CreateEventCommand
+            {
+                Title = data.Title,
+                Kind = EventKind.OneOff,
+                IsAllDay = data.IsAllDay == true,
+                OccursAtUtc = occursAtUtc,
+                Description = data.Description,
+                Place = data.Place,
+                Link = data.Link
+            };
         }
         else
         {
@@ -741,17 +740,18 @@ public sealed class MessageHandlers
                 timeOfDay = new TimeSpan(data.Hour.Value, data.Minute.Value, 0);
             }
 
-            command = new CreateEventCommand(
-                data.Title,
-                EventKind.Yearly,
-                data.IsAllDay == true,
-                null,
-                data.Month,
-                data.Day,
-                timeOfDay,
-                data.Description,
-                data.Place,
-                data.Link);
+            command = new CreateEventCommand
+            {
+                Title = data.Title,
+                Kind = EventKind.Yearly,
+                IsAllDay = data.IsAllDay == true,
+                Month = data.Month,
+                Day = data.Day,
+                TimeOfDay = timeOfDay,
+                Description = data.Description,
+                Place = data.Place,
+                Link = data.Link
+            };
         }
 
         await _createEvent.ExecuteAsync(command, cancellationToken);
@@ -828,7 +828,7 @@ public sealed class MessageHandlers
             switch (field)
             {
                 case "title":
-                    command = new UpdateEventCommand(eventId, "title", text, null, null, null, null, null, null, null, null);
+                    command = new UpdateEventCommand { EventId = eventId, Field = "title", Title = text };
                     await _updateEvent.ExecuteAsync(command, cancellationToken);
                     await _conversationRepository.DeleteAsync(state.UserId, cancellationToken);
                     await _botClient.SendNoPreview(
@@ -839,7 +839,7 @@ public sealed class MessageHandlers
 
                 case "description":
                     var description = IsSkip(text) ? null : text;
-                    command = new UpdateEventCommand(eventId, "description", null, description, null, null, null, null, null, null, null);
+                    command = new UpdateEventCommand { EventId = eventId, Field = "description", Description = description };
                     await _updateEvent.ExecuteAsync(command, cancellationToken);
                     await _conversationRepository.DeleteAsync(state.UserId, cancellationToken);
                     await _botClient.SendNoPreview(
@@ -850,7 +850,7 @@ public sealed class MessageHandlers
 
                 case "place":
                     var place = IsSkip(text) ? null : text;
-                    command = new UpdateEventCommand(eventId, "place", null, null, place, null, null, null, null, null, null);
+                    command = new UpdateEventCommand { EventId = eventId, Field = "place", Place = place };
                     await _updateEvent.ExecuteAsync(command, cancellationToken);
                     await _conversationRepository.DeleteAsync(state.UserId, cancellationToken);
                     await _botClient.SendNoPreview(
@@ -861,7 +861,7 @@ public sealed class MessageHandlers
 
                 case "link":
                     var link = IsSkip(text) ? null : text;
-                    command = new UpdateEventCommand(eventId, "link", null, null, null, link, null, null, null, null, null);
+                    command = new UpdateEventCommand { EventId = eventId, Field = "link", Link = link };
                     await _updateEvent.ExecuteAsync(command, cancellationToken);
                     await _conversationRepository.DeleteAsync(state.UserId, cancellationToken);
                     await _botClient.SendNoPreview(
@@ -998,18 +998,13 @@ public sealed class MessageHandlers
             var instant = zonedDateTime.ToInstant();
             var occursAtUtc = instant.ToDateTimeOffset();
 
-            var command = new UpdateEventCommand(
-                eventId,
-                "occursAtUtc",
-                null,
-                null,
-                null,
-                null,
-                occursAtUtc,
-                null,
-                null,
-                null,
-                data.IsAllDay);
+            var command = new UpdateEventCommand
+            {
+                EventId = eventId,
+                Field = "occursAtUtc",
+                OccursAtUtc = occursAtUtc,
+                IsAllDay = data.IsAllDay
+            };
             await _updateEvent.ExecuteAsync(command, cancellationToken);
         }
         else
@@ -1025,18 +1020,15 @@ public sealed class MessageHandlers
                 timeOfDay = new TimeSpan(data.Hour.Value, data.Minute.Value, 0);
             }
 
-            var command = new UpdateEventCommand(
-                eventId,
-                "yearlyDate",
-                null,
-                null,
-                null,
-                null,
-                null,
-                data.Month,
-                data.Day,
-                timeOfDay,
-                data.IsAllDay);
+            var command = new UpdateEventCommand
+            {
+                EventId = eventId,
+                Field = "yearlyDate",
+                Month = data.Month,
+                Day = data.Day,
+                TimeOfDay = timeOfDay,
+                IsAllDay = data.IsAllDay
+            };
             await _updateEvent.ExecuteAsync(command, cancellationToken);
         }
 
@@ -1457,17 +1449,16 @@ public sealed class MessageHandlers
             var instant = zonedDateTime.ToInstant();
             var occursAtUtc = instant.ToDateTimeOffset();
 
-            command = new CreateEventCommand(
-                data.Title,
-                EventKind.OneOff,
-                data.IsAllDay == true,
-                occursAtUtc,
-                null,
-                null,
-                null,
-                data.Description,
-                data.Place,
-                data.Link);
+            command = new CreateEventCommand
+            {
+                Title = data.Title,
+                Kind = EventKind.OneOff,
+                IsAllDay = data.IsAllDay == true,
+                OccursAtUtc = occursAtUtc,
+                Description = data.Description,
+                Place = data.Place,
+                Link = data.Link
+            };
         }
         else
         {
@@ -1477,17 +1468,18 @@ public sealed class MessageHandlers
                 timeOfDay = new TimeSpan(data.Hour.Value, data.Minute.Value, 0);
             }
 
-            command = new CreateEventCommand(
-                data.Title,
-                EventKind.Yearly,
-                data.IsAllDay == true,
-                null,
-                data.Month,
-                data.Day,
-                timeOfDay,
-                data.Description,
-                data.Place,
-                data.Link);
+            command = new CreateEventCommand
+            {
+                Title = data.Title,
+                Kind = EventKind.Yearly,
+                IsAllDay = data.IsAllDay == true,
+                Month = data.Month,
+                Day = data.Day,
+                TimeOfDay = timeOfDay,
+                Description = data.Description,
+                Place = data.Place,
+                Link = data.Link
+            };
         }
 
         await _createEvent.ExecuteAsync(command, cancellationToken);

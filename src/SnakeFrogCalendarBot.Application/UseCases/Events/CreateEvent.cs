@@ -82,14 +82,16 @@ public sealed class CreateEvent
     }
 }
 
-public sealed record CreateEventCommand(
-    string Title,
-    EventKind Kind,
-    bool IsAllDay,
-    DateTimeOffset? OccursAtUtc,
-    int? Month,
-    int? Day,
-    TimeSpan? TimeOfDay,
-    string? Description,
-    string? Place,
-    string? Link);
+public sealed record CreateEventCommand
+{
+    public required string Title { get; init; }
+    public required EventKind Kind { get; init; }
+    public bool IsAllDay { get; init; }
+    public DateTimeOffset? OccursAtUtc { get; init; }
+    public int? Month { get; init; }
+    public int? Day { get; init; }
+    public TimeSpan? TimeOfDay { get; init; }
+    public string? Description { get; init; }
+    public string? Place { get; init; }
+    public string? Link { get; init; }
+}

@@ -31,17 +31,13 @@ public sealed class RefreshOnMutationScenariosTests
             NullLogger<CreateEvent>.Instance);
 
         await useCase.ExecuteAsync(
-            new CreateEventCommand(
-                "Новая встреча",
-                EventKind.OneOff,
-                false,
-                new DateTimeOffset(2026, 3, 2, 10, 0, 0, TimeSpan.FromHours(3)),
-                null,
-                null,
-                null,
-                null,
-                null,
-                null),
+            new CreateEventCommand
+            {
+                Title = "Новая встреча",
+                Kind = EventKind.OneOff,
+                IsAllDay = false,
+                OccursAtUtc = new DateTimeOffset(2026, 3, 2, 10, 0, 0, TimeSpan.FromHours(3))
+            },
             CancellationToken.None);
 
         Assert.That(telegramPublisher.EditedMessageIds, Is.EquivalentTo(new[] { 101, 102, 103 }));
@@ -133,18 +129,12 @@ public sealed class RefreshOnMutationScenariosTests
             NullLogger<UpdateEvent>.Instance);
 
         await useCase.ExecuteAsync(
-            new UpdateEventCommand(
-                1,
-                "title",
-                "Новое название",
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null),
+            new UpdateEventCommand
+            {
+                EventId = 1,
+                Field = "title",
+                Title = "Новое название"
+            },
             CancellationToken.None);
 
         Assert.That(telegramPublisher.EditedMessageIds, Is.EquivalentTo(new[] { 101, 102, 103 }));

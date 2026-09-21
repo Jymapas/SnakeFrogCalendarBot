@@ -99,15 +99,17 @@ public sealed class UpdateEvent
     }
 }
 
-public sealed record UpdateEventCommand(
-    int EventId,
-    string Field,
-    string? Title,
-    string? Description,
-    string? Place,
-    string? Link,
-    DateTimeOffset? OccursAtUtc,
-    int? Month,
-    int? Day,
-    TimeSpan? TimeOfDay,
-    bool? IsAllDay);
+public sealed record UpdateEventCommand
+{
+    public required int EventId { get; init; }
+    public required string Field { get; init; }
+    public string? Title { get; init; }
+    public string? Description { get; init; }
+    public string? Place { get; init; }
+    public string? Link { get; init; }
+    public DateTimeOffset? OccursAtUtc { get; init; }
+    public int? Month { get; init; }
+    public int? Day { get; init; }
+    public TimeSpan? TimeOfDay { get; init; }
+    public bool? IsAllDay { get; init; }
+}

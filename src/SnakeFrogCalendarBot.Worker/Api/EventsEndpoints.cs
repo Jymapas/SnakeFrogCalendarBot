@@ -41,17 +41,17 @@ public static class EventsEndpoints
             if (!birthdayDateParser.TryParseMonthDay(body.Date, out var day, out var month))
                 return Results.BadRequest($"Cannot parse date '{body.Date}' as yearly event (expected format: '15 марта' or '15.03')");
 
-            command = new CreateEventCommand(
-                Title: body.Title,
-                Kind: EventKind.Yearly,
-                IsAllDay: true,
-                OccursAtUtc: null,
-                Month: month,
-                Day: day,
-                TimeOfDay: null,
-                Description: body.Description,
-                Place: body.Place,
-                Link: body.Link);
+            command = new CreateEventCommand
+            {
+                Title = body.Title,
+                Kind = EventKind.Yearly,
+                IsAllDay = true,
+                Month = month,
+                Day = day,
+                Description = body.Description,
+                Place = body.Place,
+                Link = body.Link
+            };
         }
         else
         {
@@ -76,17 +76,16 @@ public static class EventsEndpoints
             var occursAtUtc = localDateTime.InZoneLeniently(tz).ToInstant().ToDateTimeOffset();
             var isAllDay = parseResult.Hour is null;
 
-            command = new CreateEventCommand(
-                Title: body.Title,
-                Kind: EventKind.OneOff,
-                IsAllDay: isAllDay,
-                OccursAtUtc: occursAtUtc,
-                Month: null,
-                Day: null,
-                TimeOfDay: null,
-                Description: body.Description,
-                Place: body.Place,
-                Link: body.Link);
+            command = new CreateEventCommand
+            {
+                Title = body.Title,
+                Kind = EventKind.OneOff,
+                IsAllDay = isAllDay,
+                OccursAtUtc = occursAtUtc,
+                Description = body.Description,
+                Place = body.Place,
+                Link = body.Link
+            };
         }
 
         await createEvent.ExecuteAsync(command, cancellationToken);
