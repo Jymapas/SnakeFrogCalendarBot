@@ -44,6 +44,24 @@ public sealed class EventConfiguration : IEntityTypeConfiguration<Event>
                 v => v.HasValue ? TimeSpan.FromTicks(v.Value) : null)
             .HasColumnName("time_of_day");
 
+        builder.Property(e => e.DaysOfWeekMask)
+            .HasColumnName("days_of_week_mask");
+
+        builder.Property(e => e.IntervalCount)
+            .HasColumnName("interval_count");
+
+        builder.Property(e => e.IntervalUnit)
+            .HasConversion<int?>()
+            .HasColumnName("interval_unit");
+
+        builder.Property(e => e.StartDateLocal)
+            .HasColumnType("date")
+            .HasColumnName("start_date_local");
+
+        builder.Property(e => e.RepeatUntilLocal)
+            .HasColumnType("date")
+            .HasColumnName("repeat_until_local");
+
         builder.Property(e => e.Description)
             .HasMaxLength(1000)
             .HasColumnName("description");

@@ -183,10 +183,22 @@ namespace SnakeFrogCalendarBot.Infrastructure.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("day");
 
+                    b.Property<int?>("DaysOfWeekMask")
+                        .HasColumnType("integer")
+                        .HasColumnName("days_of_week_mask");
+
                     b.Property<string>("Description")
                         .HasMaxLength(1000)
                         .HasColumnType("character varying(1000)")
                         .HasColumnName("description");
+
+                    b.Property<int?>("IntervalCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("interval_count");
+
+                    b.Property<int?>("IntervalUnit")
+                        .HasColumnType("integer")
+                        .HasColumnName("interval_unit");
 
                     b.Property<bool>("IsAllDay")
                         .HasColumnType("boolean")
@@ -213,6 +225,14 @@ namespace SnakeFrogCalendarBot.Infrastructure.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)")
                         .HasColumnName("place");
+
+                    b.Property<DateOnly?>("RepeatUntilLocal")
+                        .HasColumnType("date")
+                        .HasColumnName("repeat_until_local");
+
+                    b.Property<DateOnly?>("StartDateLocal")
+                        .HasColumnType("date")
+                        .HasColumnName("start_date_local");
 
                     b.Property<long?>("TimeOfDay")
                         .HasColumnType("bigint")

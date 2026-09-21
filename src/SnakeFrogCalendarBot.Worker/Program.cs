@@ -662,6 +662,11 @@ static async Task CreateTablesManuallyAsync(CalendarDbContext dbContext)
                 month INTEGER,
                 day INTEGER,
                 time_of_day BIGINT,
+                days_of_week_mask INTEGER,
+                interval_count INTEGER,
+                interval_unit INTEGER,
+                start_date_local DATE,
+                repeat_until_local DATE,
                 description VARCHAR(1000),
                 place VARCHAR(200),
                 link VARCHAR(500),
@@ -751,6 +756,21 @@ static async Task CreateTablesManuallyAsync(CalendarDbContext dbContext)
                 IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'events' AND column_name = 'occurs_at_utc') THEN
                     ALTER TABLE events ADD COLUMN occurs_at_utc TIMESTAMP WITH TIME ZONE;
                 END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'events' AND column_name = 'days_of_week_mask') THEN
+                    ALTER TABLE events ADD COLUMN days_of_week_mask INTEGER;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'events' AND column_name = 'interval_count') THEN
+                    ALTER TABLE events ADD COLUMN interval_count INTEGER;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'events' AND column_name = 'interval_unit') THEN
+                    ALTER TABLE events ADD COLUMN interval_unit INTEGER;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'events' AND column_name = 'start_date_local') THEN
+                    ALTER TABLE events ADD COLUMN start_date_local DATE;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'events' AND column_name = 'repeat_until_local') THEN
+                    ALTER TABLE events ADD COLUMN repeat_until_local DATE;
+                END IF;
             END $$;";
         
         try
@@ -835,6 +855,26 @@ static async Task EnsureEventColumnsExistAsync(CalendarDbContext dbContext)
                 IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'events' AND column_name = 'occurs_at_utc') THEN
                     ALTER TABLE events ADD COLUMN occurs_at_utc TIMESTAMP WITH TIME ZONE;
                     RAISE NOTICE 'Added column occurs_at_utc';
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'events' AND column_name = 'days_of_week_mask') THEN
+                    ALTER TABLE events ADD COLUMN days_of_week_mask INTEGER;
+                    RAISE NOTICE 'Added column days_of_week_mask';
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'events' AND column_name = 'interval_count') THEN
+                    ALTER TABLE events ADD COLUMN interval_count INTEGER;
+                    RAISE NOTICE 'Added column interval_count';
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'events' AND column_name = 'interval_unit') THEN
+                    ALTER TABLE events ADD COLUMN interval_unit INTEGER;
+                    RAISE NOTICE 'Added column interval_unit';
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'events' AND column_name = 'start_date_local') THEN
+                    ALTER TABLE events ADD COLUMN start_date_local DATE;
+                    RAISE NOTICE 'Added column start_date_local';
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'events' AND column_name = 'repeat_until_local') THEN
+                    ALTER TABLE events ADD COLUMN repeat_until_local DATE;
+                    RAISE NOTICE 'Added column repeat_until_local';
                 END IF;
             END $$;";
         
