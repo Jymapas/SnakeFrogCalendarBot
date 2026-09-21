@@ -8,7 +8,8 @@ public enum EventCommandBuildFailure
 {
     None,
     MissingFields,
-    MissingYear
+    MissingYear,
+    MissingSchedule
 }
 
 /// <summary>
@@ -24,7 +25,17 @@ public static class EventCommandBuilder
     {
         command = null;
 
-        if (string.IsNullOrWhiteSpace(data.Title) || data.Month is null || data.Day is null || data.Kind is null)
+        if (string.IsNullOrWhiteSpace(data.Title) || data.Kind is null)
+        {
+            return EventCommandBuildFailure.MissingFields;
+        }
+
+        if (data.Kind is "Weekly" or "Interval")
+        {
+            return TryBuildRecurring(data, out command);
+        }
+
+        if (data.Month is null || data.Day is null)
         {
             return EventCommandBuildFailure.MissingFields;
         }
@@ -58,6 +69,68 @@ public static class EventCommandBuilder
             Month = data.Month,
             Day = data.Day,
             TimeOfDay = ResolveTimeOfDay(data),
+            Description = data.Description,
+            Place = data.Place,
+            Link = data.Link
+        };
+
+        return EventCommandBuildFailure.None;
+    }
+
+    private static EventCommandBuildFailure TryBuildRecurring(
+        EventConversationData data,
+        out CreateEventCommand? command)
+    {
+        command = null;
+
+        if (data.StartDate is null)
+        {
+            return EventCommandBuildFailure.MissingSchedule;
+        }
+
+        var isAllDay = data.IsAllDay == true;
+        var timeOfDay = ResolveTimeOfDay(data);
+
+        if (data.Kind == "Weekly")
+        {
+            if (data.DaysOfWeekMask is null or 0)
+            {
+                return EventCommandBuildFailure.MissingSchedule;
+            }
+
+            command = new CreateEventCommand
+            {
+                Title = data.Title!,
+                Kind = EventKind.Weekly,
+                IsAllDay = isAllDay,
+                TimeOfDay = timeOfDay,
+                DaysOfWeekMask = data.DaysOfWeekMask,
+                StartDateLocal = data.StartDate,
+                RepeatUntilLocal = data.RepeatUntil,
+                Description = data.Description,
+                Place = data.Place,
+                Link = data.Link
+            };
+
+            return EventCommandBuildFailure.None;
+        }
+
+        if (data.IntervalCount is null or < 1
+            || !Enum.TryParse<RecurrenceUnit>(data.IntervalUnit, out var unit))
+        {
+            return EventCommandBuildFailure.MissingSchedule;
+        }
+
+        command = new CreateEventCommand
+        {
+            Title = data.Title!,
+            Kind = EventKind.Interval,
+            IsAllDay = isAllDay,
+            TimeOfDay = timeOfDay,
+            IntervalCount = data.IntervalCount,
+            IntervalUnit = unit,
+            StartDateLocal = data.StartDate,
+            RepeatUntilLocal = data.RepeatUntil,
             Description = data.Description,
             Place = data.Place,
             Link = data.Link

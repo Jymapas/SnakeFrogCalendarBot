@@ -192,6 +192,68 @@ public static class InlineKeyboards
         return new InlineKeyboardMarkup(buttons);
     }
 
+    /// <summary>
+    /// Выбор типа повторения на шаге создания события.
+    /// </summary>
+    public static InlineKeyboardMarkup EventKindKeyboard()
+    {
+        return new InlineKeyboardMarkup(new[]
+        {
+            new[] { InlineKeyboardButton.WithCallbackData("📌 Разовое", "event_kind:OneOff") },
+            new[] { InlineKeyboardButton.WithCallbackData("🎉 Ежегодно", "event_kind:Yearly") },
+            new[] { InlineKeyboardButton.WithCallbackData("🔁 Еженедельно", "event_kind:Weekly") },
+            new[] { InlineKeyboardButton.WithCallbackData("⏱ Раз в N периодов", "event_kind:Interval") }
+        });
+    }
+
+    /// <summary>
+    /// Мультивыбор дней недели: бит 0 — понедельник, бит 6 — воскресенье.
+    /// </summary>
+    public static InlineKeyboardMarkup WeekdaysKeyboard(int daysOfWeekMask)
+    {
+        var names = new[] { "Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс" };
+        var buttons = new List<List<InlineKeyboardButton>>();
+
+        for (var i = 0; i < names.Length; i += 4)
+        {
+            var row = new List<InlineKeyboardButton>();
+            for (var j = 0; j < 4 && i + j < names.Length; j++)
+            {
+                var bit = i + j;
+                var selected = (daysOfWeekMask & (1 << bit)) != 0;
+                row.Add(InlineKeyboardButton.WithCallbackData(
+                    selected ? $"✅ {names[bit]}" : names[bit],
+                    $"event_weekday:{bit}"));
+            }
+
+            buttons.Add(row);
+        }
+
+        buttons.Add(new List<InlineKeyboardButton>
+        {
+            InlineKeyboardButton.WithCallbackData("Готово", "event_weekdays_done")
+        });
+
+        return new InlineKeyboardMarkup(buttons);
+    }
+
+    public static InlineKeyboardMarkup IntervalUnitKeyboard()
+    {
+        return new InlineKeyboardMarkup(new[]
+        {
+            new[]
+            {
+                InlineKeyboardButton.WithCallbackData("Дни", "event_interval_unit:Days"),
+                InlineKeyboardButton.WithCallbackData("Недели", "event_interval_unit:Weeks")
+            },
+            new[]
+            {
+                InlineKeyboardButton.WithCallbackData("Месяцы", "event_interval_unit:Months"),
+                InlineKeyboardButton.WithCallbackData("Годы", "event_interval_unit:Years")
+            }
+        });
+    }
+
     public static InlineKeyboardMarkup EventMonthSelectionKeyboardForEdit()
     {
         var monthNames = new[]

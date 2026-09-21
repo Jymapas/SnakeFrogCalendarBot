@@ -107,6 +107,32 @@ public sealed class CallbackHandlers
             return;
         }
 
+        if (data.StartsWith("event_kind:"))
+        {
+            await ForwardEventAddChoiceAsync(
+                callbackQuery, EventConversationSteps.Kind, data["event_kind:".Length..], cancellationToken);
+            return;
+        }
+
+        if (data.StartsWith("event_interval_unit:"))
+        {
+            await ForwardEventAddChoiceAsync(
+                callbackQuery, EventConversationSteps.IntervalUnit, data["event_interval_unit:".Length..], cancellationToken);
+            return;
+        }
+
+        if (data.StartsWith("event_weekday:"))
+        {
+            await HandleWeekdayToggleAsync(callbackQuery, data, cancellationToken);
+            return;
+        }
+
+        if (data == "event_weekdays_done")
+        {
+            await HandleWeekdaysDoneAsync(callbackQuery, cancellationToken);
+            return;
+        }
+
         if (data.StartsWith("birthday_list_month:"))
         {
             await HandleBirthdayListMonthAsync(callbackQuery, data, cancellationToken);
@@ -1131,6 +1157,119 @@ public sealed class CallbackHandlers
         using var scope = _serviceProvider.CreateScope();
         var messageHandlers = scope.ServiceProvider.GetRequiredService<MessageHandlers>();
         await messageHandlers.HandleAsync(virtualMessage, cancellationToken);
+    }
+
+    /// <summary>
+    /// Превращает нажатие кнопки в обычное текстовое сообщение шага диалога: логика ветвления
+    /// остаётся одна на кнопки и на ручной ввод.
+    /// </summary>
+    private async Task ForwardEventAddChoiceAsync(
+        CallbackQuery callbackQuery,
+        string expectedStep,
+        string text,
+        CancellationToken cancellationToken)
+    {
+        await _botClient.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: cancellationToken);
+
+        var state = await _conversationRepository.GetByUserIdAsync(callbackQuery.From!.Id, cancellationToken);
+        if (state is null || state.ConversationName != ConversationNames.EventAdd || state.Step != expectedStep)
+        {
+            return;
+        }
+
+        var virtualMessage = new Message
+        {
+            From = callbackQuery.From,
+            Date = DateTime.UtcNow,
+            Chat = new Chat { Id = callbackQuery.Message?.Chat.Id ?? callbackQuery.From!.Id, Type = ChatType.Private },
+            Text = text
+        };
+
+        using var scope = _serviceProvider.CreateScope();
+        var messageHandlers = scope.ServiceProvider.GetRequiredService<MessageHandlers>();
+        await messageHandlers.HandleAsync(virtualMessage, cancellationToken);
+    }
+
+    private async Task HandleWeekdayToggleAsync(CallbackQuery callbackQuery, string data, CancellationToken cancellationToken)
+    {
+        await _botClient.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: cancellationToken);
+
+        var parts = data.Split(':');
+        if (parts.Length < 2 || !int.TryParse(parts[1], out var bit) || bit is < 0 or > 6)
+        {
+            return;
+        }
+
+        var state = await _conversationRepository.GetByUserIdAsync(callbackQuery.From!.Id, cancellationToken);
+        if (state is null || state.ConversationName != ConversationNames.EventAdd
+            || state.Step != EventConversationSteps.Weekdays)
+        {
+            return;
+        }
+
+        var conversationData = DeserializeEventData(state.StateJson);
+        var mask = (conversationData.DaysOfWeekMask ?? 0) ^ (1 << bit);
+        conversationData.DaysOfWeekMask = mask;
+
+        state.Update(
+            EventConversationSteps.Weekdays,
+            JsonSerializer.Serialize(conversationData, EventJsonOptions),
+            _clock.UtcNow);
+        await _conversationRepository.UpsertAsync(state, cancellationToken);
+
+        if (callbackQuery.Message is not null)
+        {
+            await _botClient.EditMessageReplyMarkup(
+                callbackQuery.Message.Chat.Id,
+                callbackQuery.Message.MessageId,
+                replyMarkup: InlineKeyboards.WeekdaysKeyboard(mask),
+                cancellationToken: cancellationToken);
+        }
+    }
+
+    private async Task HandleWeekdaysDoneAsync(CallbackQuery callbackQuery, CancellationToken cancellationToken)
+    {
+        var state = await _conversationRepository.GetByUserIdAsync(callbackQuery.From!.Id, cancellationToken);
+        if (state is null || state.ConversationName != ConversationNames.EventAdd
+            || state.Step != EventConversationSteps.Weekdays)
+        {
+            await _botClient.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: cancellationToken);
+            return;
+        }
+
+        var conversationData = DeserializeEventData(state.StateJson);
+        var mask = conversationData.DaysOfWeekMask ?? 0;
+
+        if (mask == 0)
+        {
+            await _botClient.AnswerCallbackQuery(
+                callbackQuery.Id,
+                text: "Выберите хотя бы один день недели",
+                showAlert: true,
+                cancellationToken: cancellationToken);
+            return;
+        }
+
+        await ForwardEventAddChoiceAsync(
+            callbackQuery, EventConversationSteps.Weekdays, $"mask:{mask}", cancellationToken);
+    }
+
+    // Должны совпадать с настройками в MessageHandlers: состояние диалога пишут оба обработчика.
+    private static readonly JsonSerializerOptions EventJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+    };
+
+    private static EventConversationData DeserializeEventData(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return new EventConversationData();
+        }
+
+        return JsonSerializer.Deserialize<EventConversationData>(json, EventJsonOptions)
+            ?? new EventConversationData();
     }
 
     private async Task HandleBirthdayListMonthAsync(CallbackQuery callbackQuery, string data, CancellationToken cancellationToken)

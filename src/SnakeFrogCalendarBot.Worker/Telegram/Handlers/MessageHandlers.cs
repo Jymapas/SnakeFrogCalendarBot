@@ -523,10 +523,11 @@ public sealed class MessageHandlers
                 }
 
                 data.Title = text;
-                await UpdateEventStateAsync(state, EventConversationSteps.Date, data, now, cancellationToken);
+                await UpdateEventStateAsync(state, EventConversationSteps.Kind, data, now, cancellationToken);
                 await _botClient.SendNoPreview(
                     message.Chat.Id,
-                    "Введите дату (например, 7 января 2026 или 2026-01-07)",
+                    "Выберите тип события",
+                    replyMarkup: InlineKeyboards.EventKindKeyboard(),
                     cancellationToken: cancellationToken);
                 break;
 
@@ -550,11 +551,7 @@ public sealed class MessageHandlers
                 if (parseResult.Hour.HasValue && parseResult.Minute.HasValue)
                 {
                     data.IsAllDay = false;
-                    await UpdateEventStateAsync(state, EventConversationSteps.Kind, data, now, cancellationToken);
-                    await _botClient.SendNoPreview(
-                        message.Chat.Id,
-                        "Выберите тип события: 'разовое' или 'ежегодное'",
-                        cancellationToken: cancellationToken);
+                    await AskDescriptionAsync(state, data, message.Chat.Id, now, cancellationToken);
                 }
                 else
                 {
@@ -580,13 +577,13 @@ public sealed class MessageHandlers
                         "Введите время (HH:mm)",
                         cancellationToken: cancellationToken);
                 }
+                else if (IsRecurringKind(data.Kind))
+                {
+                    await AskRepeatUntilAsync(state, data, message.Chat.Id, now, cancellationToken);
+                }
                 else
                 {
-                    await UpdateEventStateAsync(state, EventConversationSteps.Kind, data, now, cancellationToken);
-                    await _botClient.SendNoPreview(
-                        message.Chat.Id,
-                        "Выберите тип события: 'разовое' или 'ежегодное'",
-                        cancellationToken: cancellationToken);
+                    await AskDescriptionAsync(state, data, message.Chat.Id, now, cancellationToken);
                 }
                 break;
 
@@ -603,38 +600,175 @@ public sealed class MessageHandlers
 
                 data.Hour = timeResult.Hour;
                 data.Minute = timeResult.Minute;
-                await UpdateEventStateAsync(state, EventConversationSteps.Kind, data, now, cancellationToken);
-                await _botClient.SendNoPreview(
-                    message.Chat.Id,
-                    "Выберите тип события: 'разовое' или 'ежегодное'",
-                    cancellationToken: cancellationToken);
-                break;
 
-            case EventConversationSteps.Kind:
-                var kindText = text.ToLowerInvariant();
-                if (kindText.Contains("разов") || kindText.Contains("one"))
+                if (IsRecurringKind(data.Kind))
                 {
-                    data.Kind = "OneOff";
-                }
-                else if (kindText.Contains("ежегод") || kindText.Contains("yearly"))
-                {
-                    data.Kind = "Yearly";
+                    await AskRepeatUntilAsync(state, data, message.Chat.Id, now, cancellationToken);
                 }
                 else
                 {
+                    await AskDescriptionAsync(state, data, message.Chat.Id, now, cancellationToken);
+                }
+                break;
+
+            case EventConversationSteps.Kind:
+                var kind = ParseEventKind(text);
+                if (kind is null)
+                {
                     await _botClient.SendNoPreview(
                         message.Chat.Id,
-                        "Введите 'разовое' или 'ежегодное'",
+                        "Выберите тип события кнопкой или введите: разовое, ежегодное, еженедельно, периодически",
+                        replyMarkup: InlineKeyboards.EventKindKeyboard(),
                         cancellationToken: cancellationToken);
                     return;
                 }
 
-                await UpdateEventStateAsync(state, EventConversationSteps.Description, data, now, cancellationToken);
+                data.Kind = kind;
+
+                switch (kind)
+                {
+                    case "Weekly":
+                        data.DaysOfWeekMask = 0;
+                        await UpdateEventStateAsync(state, EventConversationSteps.Weekdays, data, now, cancellationToken);
+                        await _botClient.SendNoPreview(
+                            message.Chat.Id,
+                            "Выберите дни недели и нажмите «Готово»",
+                            replyMarkup: InlineKeyboards.WeekdaysKeyboard(0),
+                            cancellationToken: cancellationToken);
+                        break;
+
+                    case "Interval":
+                        await UpdateEventStateAsync(state, EventConversationSteps.IntervalCount, data, now, cancellationToken);
+                        await _botClient.SendNoPreview(
+                            message.Chat.Id,
+                            "Как часто повторять? Введите число, например 2 (каждые два периода)",
+                            cancellationToken: cancellationToken);
+                        break;
+
+                    default:
+                        await UpdateEventStateAsync(state, EventConversationSteps.Date, data, now, cancellationToken);
+                        await _botClient.SendNoPreview(
+                            message.Chat.Id,
+                            "Введите дату (например, 7 января 2026 или 2026-01-07)",
+                            cancellationToken: cancellationToken);
+                        break;
+                }
+
+                break;
+
+            case EventConversationSteps.Weekdays:
+                var toggled = ParseWeekdayMask(text);
+                if (toggled is null or 0)
+                {
+                    await _botClient.SendNoPreview(
+                        message.Chat.Id,
+                        "Выберите хотя бы один день недели кнопками",
+                        replyMarkup: InlineKeyboards.WeekdaysKeyboard(data.DaysOfWeekMask ?? 0),
+                        cancellationToken: cancellationToken);
+                    return;
+                }
+
+                data.DaysOfWeekMask = toggled;
+                await AskRecurrenceStartDateAsync(state, data, message.Chat.Id, now, cancellationToken);
+                break;
+
+            case EventConversationSteps.IntervalCount:
+                if (!int.TryParse(text, out var intervalCount) || intervalCount < 1)
+                {
+                    await _botClient.SendNoPreview(
+                        message.Chat.Id,
+                        "Введите целое число не меньше 1",
+                        cancellationToken: cancellationToken);
+                    return;
+                }
+
+                data.IntervalCount = intervalCount;
+                await UpdateEventStateAsync(state, EventConversationSteps.IntervalUnit, data, now, cancellationToken);
                 await _botClient.SendNoPreview(
                     message.Chat.Id,
-                    "Введите описание или 'пропустить'",
-                    replyMarkup: CreateSkipKeyboard(ConversationNames.EventAdd, EventConversationSteps.Description),
+                    $"Каждые {intervalCount} — чего именно?",
+                    replyMarkup: InlineKeyboards.IntervalUnitKeyboard(),
                     cancellationToken: cancellationToken);
+                break;
+
+            case EventConversationSteps.IntervalUnit:
+                var unit = ParseRecurrenceUnit(text);
+                if (unit is null)
+                {
+                    await _botClient.SendNoPreview(
+                        message.Chat.Id,
+                        "Выберите единицу кнопкой: дни, недели, месяцы или годы",
+                        replyMarkup: InlineKeyboards.IntervalUnitKeyboard(),
+                        cancellationToken: cancellationToken);
+                    return;
+                }
+
+                data.IntervalUnit = unit;
+                await AskRecurrenceStartDateAsync(state, data, message.Chat.Id, now, cancellationToken);
+                break;
+
+            case EventConversationSteps.StartDate:
+                if (!_dateTimeParser.TryParse(text, out var startResult) || startResult is null || startResult.Year == 0)
+                {
+                    await _botClient.SendNoPreview(
+                        message.Chat.Id,
+                        "Не удалось распознать дату. Формат: 7 января 2026 или 2026-01-07",
+                        cancellationToken: cancellationToken);
+                    return;
+                }
+
+                data.StartDate = new DateOnly(startResult.Year, startResult.Month, startResult.Day);
+
+                if (startResult.Hour.HasValue && startResult.Minute.HasValue)
+                {
+                    data.IsAllDay = false;
+                    data.Hour = startResult.Hour;
+                    data.Minute = startResult.Minute;
+                    await AskRepeatUntilAsync(state, data, message.Chat.Id, now, cancellationToken);
+                }
+                else
+                {
+                    await UpdateEventStateAsync(state, EventConversationSteps.AllDay, data, now, cancellationToken);
+                    await _botClient.SendNoPreview(
+                        message.Chat.Id,
+                        "Это событие на весь день? (да/нет)",
+                        cancellationToken: cancellationToken);
+                }
+
+                break;
+
+            case EventConversationSteps.RepeatUntil:
+                if (IsSkip(text))
+                {
+                    data.RepeatUntil = null;
+                }
+                else
+                {
+                    if (!_dateTimeParser.TryParse(text, out var untilResult) || untilResult is null || untilResult.Year == 0)
+                    {
+                        await _botClient.SendNoPreview(
+                            message.Chat.Id,
+                            "Не удалось распознать дату окончания. Формат: 31 декабря 2026 или 2026-12-31",
+                            replyMarkup: CreateSkipKeyboard(ConversationNames.EventAdd, EventConversationSteps.RepeatUntil),
+                            cancellationToken: cancellationToken);
+                        return;
+                    }
+
+                    var repeatUntil = new DateOnly(untilResult.Year, untilResult.Month, untilResult.Day);
+                    if (data.StartDate.HasValue && repeatUntil < data.StartDate.Value)
+                    {
+                        await _botClient.SendNoPreview(
+                            message.Chat.Id,
+                            "Дата окончания не может быть раньше даты начала",
+                            replyMarkup: CreateSkipKeyboard(ConversationNames.EventAdd, EventConversationSteps.RepeatUntil),
+                            cancellationToken: cancellationToken);
+                        return;
+                    }
+
+                    data.RepeatUntil = repeatUntil;
+                }
+
+                await AskDescriptionAsync(state, data, message.Chat.Id, now, cancellationToken);
                 break;
 
             case EventConversationSteps.Description:
@@ -672,6 +806,149 @@ public sealed class MessageHandlers
         }
     }
 
+    private static bool IsRecurringKind(string? kind) => kind is "Weekly" or "Interval";
+
+    /// <summary>
+    /// Распознаёт тип события и по нажатию кнопки, и по свободному тексту.
+    /// </summary>
+    private static string? ParseEventKind(string text)
+    {
+        var normalized = text.Trim().ToLowerInvariant();
+
+        if (normalized is "oneoff" || normalized.Contains("разов") || normalized.Contains("one"))
+        {
+            return "OneOff";
+        }
+
+        if (normalized is "yearly" || normalized.Contains("ежегод") || normalized.Contains("year"))
+        {
+            return "Yearly";
+        }
+
+        if (normalized is "weekly" || normalized.Contains("еженед") || normalized.Contains("week"))
+        {
+            return "Weekly";
+        }
+
+        if (normalized is "interval" || normalized.Contains("период") || normalized.Contains("интервал")
+            || normalized.Contains("раз в") || normalized.Contains("кажд"))
+        {
+            return "Interval";
+        }
+
+        return null;
+    }
+
+    private static string? ParseRecurrenceUnit(string text)
+    {
+        var normalized = text.Trim().ToLowerInvariant();
+
+        if (normalized is "days" || normalized.StartsWith("дн") || normalized.StartsWith("ден"))
+        {
+            return "Days";
+        }
+
+        if (normalized is "weeks" || normalized.StartsWith("недел"))
+        {
+            return "Weeks";
+        }
+
+        if (normalized is "months" || normalized.StartsWith("месяц"))
+        {
+            return "Months";
+        }
+
+        if (normalized is "years" || normalized.StartsWith("год") || normalized.StartsWith("лет"))
+        {
+            return "Years";
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Принимает готовую маску из кнопочного шага («mask:5») либо перечисление дней текстом.
+    /// </summary>
+    private static int? ParseWeekdayMask(string text)
+    {
+        var normalized = text.Trim().ToLowerInvariant();
+
+        if (normalized.StartsWith("mask:") && int.TryParse(normalized[5..], out var mask))
+        {
+            return mask is > 0 and <= 0b1111111 ? mask : null;
+        }
+
+        var names = new[]
+        {
+            new[] { "пн", "понедельник" },
+            new[] { "вт", "вторник" },
+            new[] { "ср", "среда", "среду" },
+            new[] { "чт", "четверг" },
+            new[] { "пт", "пятница", "пятницу" },
+            new[] { "сб", "суббота", "субботу" },
+            new[] { "вс", "воскресенье" }
+        };
+
+        var result = 0;
+        foreach (var token in normalized.Split([',', ' ', ';'], StringSplitOptions.RemoveEmptyEntries))
+        {
+            for (var bit = 0; bit < names.Length; bit++)
+            {
+                if (names[bit].Any(name => token.StartsWith(name, StringComparison.Ordinal)))
+                {
+                    result |= 1 << bit;
+                    break;
+                }
+            }
+        }
+
+        return result == 0 ? null : result;
+    }
+
+    private async Task AskRecurrenceStartDateAsync(
+        ConversationState state,
+        EventConversationData data,
+        long chatId,
+        DateTime now,
+        CancellationToken cancellationToken)
+    {
+        await UpdateEventStateAsync(state, EventConversationSteps.StartDate, data, now, cancellationToken);
+        await _botClient.SendNoPreview(
+            chatId,
+            "С какой даты начинать? (например, 7 января 2026 или 2026-01-07)",
+            cancellationToken: cancellationToken);
+    }
+
+    private async Task AskRepeatUntilAsync(
+        ConversationState state,
+        EventConversationData data,
+        long chatId,
+        DateTime now,
+        CancellationToken cancellationToken)
+    {
+        await UpdateEventStateAsync(state, EventConversationSteps.RepeatUntil, data, now, cancellationToken);
+        await _botClient.SendNoPreview(
+            chatId,
+            "До какой даты повторять? Или 'пропустить' — повторять бессрочно",
+            replyMarkup: CreateSkipKeyboard(ConversationNames.EventAdd, EventConversationSteps.RepeatUntil),
+            cancellationToken: cancellationToken);
+    }
+
+    private async Task AskDescriptionAsync(
+        ConversationState state,
+        EventConversationData data,
+        long chatId,
+        DateTime now,
+        CancellationToken cancellationToken)
+    {
+        await UpdateEventStateAsync(state, EventConversationSteps.Description, data, now, cancellationToken);
+        await _botClient.SendNoPreview(
+            chatId,
+            "Введите описание или 'пропустить'",
+            replyMarkup: CreateSkipKeyboard(ConversationNames.EventAdd, EventConversationSteps.Description),
+            cancellationToken: cancellationToken);
+    }
+
     private async Task SaveEventAsync(Message message, EventConversationData data, CancellationToken cancellationToken)
     {
         var timeZone = DateTimeZoneProviders.Tzdb[_timeZoneProvider.GetTimeZoneId()];
@@ -679,8 +956,8 @@ public sealed class MessageHandlers
 
         if (failure != EventCommandBuildFailure.None)
         {
-            var errorText = failure == EventCommandBuildFailure.MissingYear
-                ? "Не удалось сохранить событие. Начните заново с /event_add"
+            var errorText = failure == EventCommandBuildFailure.MissingSchedule
+                ? "Не удалось сохранить событие: расписание повторения заполнено не полностью"
                 : "Не удалось сохранить событие. Начните заново с /event_add";
 
             await _conversationRepository.DeleteAsync(message.From!.Id, cancellationToken);
@@ -1345,9 +1622,12 @@ public sealed class MessageHandlers
 
         if (failure != EventCommandBuildFailure.None)
         {
-            var errorText = failure == EventCommandBuildFailure.MissingYear
-                ? "Для разового события требуется указать год"
-                : "Не удалось сохранить событие. Проверьте формат";
+            var errorText = failure switch
+            {
+                EventCommandBuildFailure.MissingYear => "Для разового события требуется указать год",
+                EventCommandBuildFailure.MissingSchedule => "Не удалось сохранить событие: расписание повторения заполнено не полностью",
+                _ => "Не удалось сохранить событие. Проверьте формат"
+            };
 
             await _conversationRepository.DeleteAsync(message.From!.Id, cancellationToken);
             await _botClient.SendNoPreview(

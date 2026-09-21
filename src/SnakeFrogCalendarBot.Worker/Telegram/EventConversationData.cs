@@ -11,6 +11,11 @@ public sealed class EventConversationData
     public bool? IsAllDay { get; set; }
     public bool? HasYear { get; set; }
     public string? Kind { get; set; }
+    public int? DaysOfWeekMask { get; set; }
+    public int? IntervalCount { get; set; }
+    public string? IntervalUnit { get; set; }
+    public DateOnly? StartDate { get; set; }
+    public DateOnly? RepeatUntil { get; set; }
     public string? Description { get; set; }
     public string? Place { get; set; }
     public string? Link { get; set; }
