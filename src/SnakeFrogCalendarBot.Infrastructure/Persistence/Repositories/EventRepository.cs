@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using SnakeFrogCalendarBot.Application.Abstractions.Persistence;
 using SnakeFrogCalendarBot.Application.Abstractions.Time;
+using SnakeFrogCalendarBot.Application.Recurrence;
 using SnakeFrogCalendarBot.Domain.Entities;
 using SnakeFrogCalendarBot.Domain.Enums;
 using NodaTime;
@@ -32,69 +33,12 @@ public sealed class EventRepository : IEventRepository
 
     public async Task<IReadOnlyList<Event>> ListUpcomingAsync(CancellationToken cancellationToken)
     {
-        var now = _clock.UtcNow;
-        var timeZone = DateTimeZoneProviders.Tzdb[_timeZoneProvider.GetTimeZoneId()];
-        var nowInZone = Instant.FromDateTimeUtc(now).InZone(timeZone);
-        var today = nowInZone.Date;
+        var now = Instant.FromDateTimeUtc(_clock.UtcNow);
 
-        var oneOffEvents = await _dbContext.Events
-            .AsNoTracking()
-            .Where(e => e.Kind == EventKind.OneOff && e.OccursAtUtc.HasValue && e.OccursAtUtc.Value > now)
-            .OrderBy(e => e.OccursAtUtc)
-            .ToListAsync(cancellationToken);
-
-        var yearlyEvents = await _dbContext.Events
-            .AsNoTracking()
-            .Where(e => e.Kind == EventKind.Yearly && e.Month.HasValue && e.Day.HasValue)
-            .ToListAsync(cancellationToken);
-
-        var yearlyWithNextOccurrence = yearlyEvents
-            .Select(e =>
-            {
-                var thisYear = new LocalDate(today.Year, e.Month!.Value, e.Day!.Value);
-                var nextOccurrence = thisYear >= today
-                    ? thisYear
-                    : thisYear.PlusYears(1);
-
-                var localDateTime = e.IsAllDay
-                    ? nextOccurrence.AtMidnight()
-                    : nextOccurrence.At(e.TimeOfDay.HasValue ? LocalTime.FromTicksSinceMidnight(e.TimeOfDay.Value.Ticks) : LocalTime.Midnight);
-
-                var zonedDateTime = localDateTime.InZoneLeniently(timeZone);
-                var instant = zonedDateTime.ToInstant();
-                var utcDateTime = instant.ToDateTimeUtc();
-
-                return new { Event = e, NextOccurrence = utcDateTime };
-            })
-            .OrderBy(x => x.NextOccurrence)
-            .Select(x => x.Event)
-            .ToList();
-
-        var allEvents = oneOffEvents
-            .Concat(yearlyWithNextOccurrence)
-            .OrderBy(e =>
-            {
-                if (e.Kind == EventKind.OneOff && e.OccursAtUtc.HasValue)
-                {
-                    return e.OccursAtUtc.Value;
-                }
-
-                var thisYear = new LocalDate(today.Year, e.Month!.Value, e.Day!.Value);
-                var nextOccurrence = thisYear >= today
-                    ? thisYear
-                    : thisYear.PlusYears(1);
-
-                var localDateTime = e.IsAllDay
-                    ? nextOccurrence.AtMidnight()
-                    : nextOccurrence.At(e.TimeOfDay.HasValue ? LocalTime.FromTicksSinceMidnight(e.TimeOfDay.Value.Ticks) : LocalTime.Midnight);
-
-                var zonedDateTime = localDateTime.InZoneLeniently(timeZone);
-                var instant = zonedDateTime.ToInstant();
-                return instant.ToDateTimeUtc();
-            })
-            .ToList();
-
-        return allEvents;
+        // Разовое событие, уже прошедшее сегодня, в «ближайшие» не попадает.
+        return await ListOrderedByNextOccurrenceAsync(
+            (eventEntity, next) => eventEntity.Kind != EventKind.OneOff || next > now,
+            cancellationToken);
     }
 
     public async Task<Event?> GetByIdAsync(int id, CancellationToken cancellationToken)
@@ -131,66 +75,35 @@ public sealed class EventRepository : IEventRepository
 
     public async Task<IReadOnlyList<Event>> ListUpcomingForEditAsync(CancellationToken cancellationToken)
     {
-        var now = _clock.UtcNow;
+        return await ListOrderedByNextOccurrenceAsync(null, cancellationToken);
+    }
+
+    /// <summary>
+    /// Отбирает события, у которых есть вхождение начиная с сегодняшнего дня, и сортирует их
+    /// по ближайшему вхождению. Расчёт общий для всех типов повторения, поэтому новые типы
+    /// подхватываются автоматически.
+    /// </summary>
+    private async Task<IReadOnlyList<Event>> ListOrderedByNextOccurrenceAsync(
+        Func<Event, Instant, bool>? filter,
+        CancellationToken cancellationToken)
+    {
         var timeZone = DateTimeZoneProviders.Tzdb[_timeZoneProvider.GetTimeZoneId()];
-        var nowInZone = Instant.FromDateTimeUtc(now).InZone(timeZone);
-        var today = nowInZone.Date;
-        var todayStartUtc = today.AtStartOfDayInZone(timeZone).ToInstant().ToDateTimeUtc();
+        var today = Instant.FromDateTimeUtc(_clock.UtcNow).InZone(timeZone).Date;
 
-        var oneOffEvents = await _dbContext.Events
+        var allEvents = await _dbContext.Events
             .AsNoTracking()
-            .Where(e => e.Kind == EventKind.OneOff && e.OccursAtUtc.HasValue && e.OccursAtUtc.Value.UtcDateTime >= todayStartUtc)
             .ToListAsync(cancellationToken);
 
-        var yearlyEvents = await _dbContext.Events
-            .AsNoTracking()
-            .Where(e => e.Kind == EventKind.Yearly && e.Month.HasValue && e.Day.HasValue)
-            .ToListAsync(cancellationToken);
-
-        var yearlyWithNextOccurrence = yearlyEvents
-            .Select(e =>
+        return allEvents
+            .Select(eventEntity => new
             {
-                var thisYear = new LocalDate(today.Year, e.Month!.Value, e.Day!.Value);
-                var nextOccurrence = thisYear >= today
-                    ? thisYear
-                    : thisYear.PlusYears(1);
-
-                var localDateTime = e.IsAllDay
-                    ? nextOccurrence.AtMidnight()
-                    : nextOccurrence.At(e.TimeOfDay.HasValue ? LocalTime.FromTicksSinceMidnight(e.TimeOfDay.Value.Ticks) : LocalTime.Midnight);
-
-                var zonedDateTime = localDateTime.InZoneLeniently(timeZone);
-                var instant = zonedDateTime.ToInstant();
-                var utcDateTime = instant.ToDateTimeUtc();
-
-                return new { Event = e, NextOccurrence = utcDateTime };
+                Event = eventEntity,
+                NextOccurrence = EventNextOccurrenceCalculator.TryGetNextOccurrence(eventEntity, today, timeZone)
             })
+            .Where(x => x.NextOccurrence.HasValue)
+            .Where(x => filter is null || filter(x.Event, x.NextOccurrence!.Value))
+            .OrderBy(x => x.NextOccurrence!.Value)
+            .Select(x => x.Event)
             .ToList();
-
-        var allEvents = oneOffEvents
-            .Concat(yearlyWithNextOccurrence.Select(x => x.Event))
-            .OrderBy(e =>
-            {
-                if (e.Kind == EventKind.OneOff && e.OccursAtUtc.HasValue)
-                {
-                    return e.OccursAtUtc.Value.UtcDateTime;
-                }
-
-                var thisYear = new LocalDate(today.Year, e.Month!.Value, e.Day!.Value);
-                var nextOccurrence = thisYear >= today
-                    ? thisYear
-                    : thisYear.PlusYears(1);
-
-                var localDateTime = e.IsAllDay
-                    ? nextOccurrence.AtMidnight()
-                    : nextOccurrence.At(e.TimeOfDay.HasValue ? LocalTime.FromTicksSinceMidnight(e.TimeOfDay.Value.Ticks) : LocalTime.Midnight);
-
-                var zonedDateTime = localDateTime.InZoneLeniently(timeZone);
-                var instant = zonedDateTime.ToInstant();
-                return instant.ToDateTimeUtc();
-            })
-            .ToList();
-
-        return allEvents;
     }
 }
