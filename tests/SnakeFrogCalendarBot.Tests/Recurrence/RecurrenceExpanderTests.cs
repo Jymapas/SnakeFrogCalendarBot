@@ -185,6 +185,26 @@ public sealed class RecurrenceExpanderTests
         Assert.That(occurrences, Has.Count.LessThanOrEqualTo(RecurrenceExpander.MaxOccurrencesPerWindow));
     }
 
+    [Test]
+    public void Expand_YearlyOnLeapDayInCommonYear_ClampsInsteadOfThrowing()
+    {
+        var eventEntity = Event.CreateYearly("Годовщина", 2, 29, null, true, null, null, null, CreatedAtUtc);
+
+        var occurrences = Expand(eventEntity, new LocalDate(2027, 2, 1), new LocalDate(2027, 2, 28));
+
+        Assert.That(occurrences.Single().Date, Is.EqualTo(new LocalDate(2027, 2, 28)));
+    }
+
+    [Test]
+    public void Expand_YearlyOnImpossibleDay_ClampsToLastDayOfMonth()
+    {
+        var eventEntity = Event.CreateYearly("Отчёт", 11, 31, null, true, null, null, null, CreatedAtUtc);
+
+        var occurrences = Expand(eventEntity, new LocalDate(2026, 11, 1), new LocalDate(2026, 11, 30));
+
+        Assert.That(occurrences.Single().Date, Is.EqualTo(new LocalDate(2026, 11, 30)));
+    }
+
     private static IReadOnlyList<EventOccurrence> Expand(Event eventEntity, LocalDate start, LocalDate end)
         => RecurrenceExpander.Expand(eventEntity, start, end, TimeZone);
 

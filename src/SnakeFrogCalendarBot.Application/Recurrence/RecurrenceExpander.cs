@@ -279,14 +279,24 @@ public static class RecurrenceExpander
 
     private static LocalDate? ResolveYearlyDate(LocalDate windowStart, LocalDate windowEnd, int month, int day)
     {
-        var candidate = new LocalDate(windowStart.Year, month, day);
+        var candidate = ClampToMonth(windowStart.Year, month, day);
         if (candidate < windowStart)
         {
-            candidate = candidate.PlusYears(1);
+            candidate = ClampToMonth(windowStart.Year + 1, month, day);
         }
 
         return candidate >= windowStart && candidate <= windowEnd
             ? candidate
             : null;
+    }
+
+    /// <summary>
+    /// Домен допускает день 1..31 для любого месяца, поэтому 29 февраля в невисокосном году
+    /// и 31 ноября приходится прижимать к последнему дню месяца, а не падать.
+    /// </summary>
+    private static LocalDate ClampToMonth(int year, int month, int day)
+    {
+        var daysInMonth = CalendarSystem.Iso.GetDaysInMonth(year, month);
+        return new LocalDate(year, month, Math.Min(day, daysInMonth));
     }
 }
