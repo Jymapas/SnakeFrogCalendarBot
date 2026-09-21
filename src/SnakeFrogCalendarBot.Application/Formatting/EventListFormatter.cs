@@ -21,6 +21,60 @@ public sealed class EventListFormatter
         _clock = clock;
     }
 
+    /// <summary>
+    /// Печатает конкретные вхождения событий в период: повторяющееся событие появляется
+    /// столько раз, сколько раз оно случается внутри периода.
+    /// </summary>
+    public string FormatOccurrences(
+        IReadOnlyList<EventOccurrenceListItem> items,
+        IReadOnlyDictionary<int, Attachment?> eventAttachments)
+    {
+        if (items.Count == 0)
+        {
+            return "Событий пока нет";
+        }
+
+        var builder = new StringBuilder();
+
+        for (var index = 0; index < items.Count; index++)
+        {
+            var item = items[index];
+
+            builder.Append("📅 ");
+            builder.Append(item.Date.ToString("d MMMM", _culture));
+
+            if (item.Time.HasValue)
+            {
+                builder.Append(" ");
+                builder.Append(item.Time.Value.ToString("HH:mm", CultureInfo.InvariantCulture));
+            }
+
+            builder.Append(" — ");
+            builder.Append(item.Event.Title);
+
+            if (eventAttachments.TryGetValue(item.Event.Id, out var attachment) && attachment != null)
+            {
+                builder.Append(" 📎 ");
+                builder.Append(attachment.FileName);
+            }
+
+            var recurrence = RecurrenceDescriber.DescribeFull(item.Event);
+            if (recurrence is not null)
+            {
+                builder.Append(" (");
+                builder.Append(recurrence);
+                builder.Append(")");
+            }
+
+            if (index < items.Count - 1)
+            {
+                builder.AppendLine();
+            }
+        }
+
+        return builder.ToString();
+    }
+
     public string Format(IReadOnlyList<Event> events, IReadOnlyDictionary<int, Attachment?> eventAttachments)
     {
         if (events.Count == 0)

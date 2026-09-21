@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using SnakeFrogCalendarBot.Application.Abstractions.Persistence;
 using SnakeFrogCalendarBot.Application.Abstractions.Time;
 using SnakeFrogCalendarBot.Application.Formatting;
+using SnakeFrogCalendarBot.Application.Recurrence;
 using SnakeFrogCalendarBot.Application.UseCases.Birthdays;
 using SnakeFrogCalendarBot.Application.UseCases.Events;
 using SnakeFrogCalendarBot.Domain.Entities;
@@ -1895,6 +1896,44 @@ public sealed class CallbackHandlers
         await SendEventViewMonthAsync(callbackQuery.Message?.Chat.Id ?? callbackQuery.From!.Id, monthOffset, messageId, cancellationToken);
     }
 
+    /// <summary>
+    /// Раскрывает события в конкретные вхождения внутри периода и сортирует их по дате и времени.
+    /// Повторяющееся событие попадает в список столько раз, сколько раз оно случается.
+    /// </summary>
+    private static List<EventOccurrenceListItem> ExpandOccurrences(
+        IReadOnlyList<Domain.Entities.Event> events,
+        NodaTime.LocalDate periodStart,
+        NodaTime.LocalDate periodEnd,
+        NodaTime.DateTimeZone timeZone)
+    {
+        var items = new List<EventOccurrenceListItem>();
+
+        foreach (var eventEntity in events)
+        {
+            foreach (var occurrence in RecurrenceExpander.Expand(eventEntity, periodStart, periodEnd, timeZone))
+            {
+                items.Add(new EventOccurrenceListItem(eventEntity, occurrence.Date, occurrence.Time));
+            }
+        }
+
+        return items
+            .OrderBy(item => item.Date)
+            .ThenBy(item => item.Time ?? NodaTime.LocalTime.MaxValue)
+            .ThenBy(item => item.Event.Title, StringComparer.Ordinal)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Уникальные события в порядке первого вхождения: кнопки не должны дублироваться.
+    /// </summary>
+    private static List<Domain.Entities.Event> DistinctEvents(IReadOnlyList<EventOccurrenceListItem> items)
+    {
+        return items
+            .Select(item => item.Event)
+            .DistinctBy(eventEntity => eventEntity.Id)
+            .ToList();
+    }
+
     internal async Task SendEventViewWeekAsync(long chatId, int weekOffset, int? messageId, CancellationToken cancellationToken)
     {
         var now = _clock.UtcNow;
@@ -1907,65 +1946,9 @@ public sealed class CallbackHandlers
         var weekStart = targetDate.PlusDays(-daysFromMonday);
         var weekEnd = weekStart.PlusDays(6);
 
-        var periodStart = weekStart.AtMidnight();
-        var periodEnd = weekEnd.At(NodaTime.LocalTime.MaxValue);
-
-        var periodStartInstant = periodStart.InZoneLeniently(timeZone).ToInstant();
-        var periodEndInstant = periodEnd.InZoneLeniently(timeZone).ToInstant();
-
         var allEvents = await _listUpcomingItems.ExecuteAsync(cancellationToken);
-        var weekEvents = new List<Domain.Entities.Event>();
-
-        foreach (var eventEntity in allEvents)
-        {
-            NodaTime.Instant? eventInstant = null;
-
-            if (eventEntity.Kind == Domain.Enums.EventKind.OneOff && eventEntity.OccursAtUtc.HasValue)
-            {
-                eventInstant = NodaTime.Instant.FromDateTimeUtc(eventEntity.OccursAtUtc.Value.UtcDateTime);
-            }
-            else if (eventEntity.Kind == Domain.Enums.EventKind.Yearly && eventEntity.Month.HasValue && eventEntity.Day.HasValue)
-            {
-                var yearlyDate = new NodaTime.LocalDate(weekStart.Year, eventEntity.Month.Value, eventEntity.Day.Value);
-                if (yearlyDate < weekStart)
-                {
-                    yearlyDate = new NodaTime.LocalDate(weekStart.Year + 1, eventEntity.Month.Value, eventEntity.Day.Value);
-                }
-
-                if (yearlyDate >= weekStart && yearlyDate <= weekEnd)
-                {
-                    var localDateTime = eventEntity.IsAllDay
-                        ? yearlyDate.AtMidnight()
-                        : yearlyDate.At(eventEntity.TimeOfDay.HasValue ? NodaTime.LocalTime.FromTicksSinceMidnight(eventEntity.TimeOfDay.Value.Ticks) : NodaTime.LocalTime.Midnight);
-                    eventInstant = localDateTime.InZoneLeniently(timeZone).ToInstant();
-                }
-            }
-
-            if (eventInstant.HasValue && eventInstant.Value >= periodStartInstant && eventInstant.Value <= periodEndInstant)
-            {
-                weekEvents.Add(eventEntity);
-            }
-        }
-
-        weekEvents = weekEvents.OrderBy(e =>
-        {
-            if (e.Kind == Domain.Enums.EventKind.OneOff && e.OccursAtUtc.HasValue)
-            {
-                return e.OccursAtUtc.Value.UtcDateTime;
-            }
-
-            var yearlyDate = new NodaTime.LocalDate(weekStart.Year, e.Month!.Value, e.Day!.Value);
-            if (yearlyDate < weekStart)
-            {
-                yearlyDate = new NodaTime.LocalDate(weekStart.Year + 1, e.Month.Value, e.Day.Value);
-            }
-            var localDateTime = e.IsAllDay
-                ? yearlyDate.AtMidnight()
-                : yearlyDate.At(e.TimeOfDay.HasValue ? NodaTime.LocalTime.FromTicksSinceMidnight(e.TimeOfDay.Value.Ticks) : NodaTime.LocalTime.Midnight);
-            var zonedDateTime = localDateTime.InZoneLeniently(timeZone);
-            var instant = zonedDateTime.ToInstant();
-            return instant.ToDateTimeUtc();
-        }).ToList();
+        var weekOccurrences = ExpandOccurrences(allEvents, weekStart, weekEnd, timeZone);
+        var weekEvents = DistinctEvents(weekOccurrences);
 
         var allBirthdays = await _listBirthdays.ExecuteAsync(cancellationToken);
         var weekBirthdays = allBirthdays
@@ -2012,7 +1995,7 @@ public sealed class CallbackHandlers
             if (weekEvents.Count > 0)
             {
                 textBuilder.AppendLine("📅 События:");
-                textBuilder.AppendLine(_eventFormatter.Format(weekEvents, eventAttachments));
+                textBuilder.AppendLine(_eventFormatter.FormatOccurrences(weekOccurrences, eventAttachments));
                 if (weekBirthdays.Count > 0)
                 {
                     textBuilder.AppendLine();
@@ -2084,57 +2067,13 @@ public sealed class CallbackHandlers
         var today = nowInZone.Date;
 
         var targetMonth = today.PlusMonths(monthOffset);
-        var periodStart = new NodaTime.LocalDate(targetMonth.Year, targetMonth.Month, 1).AtMidnight();
+        var monthStart = new NodaTime.LocalDate(targetMonth.Year, targetMonth.Month, 1);
         var lastDayOfMonth = NodaTime.CalendarSystem.Iso.GetDaysInMonth(targetMonth.Year, targetMonth.Month);
-        var periodEnd = new NodaTime.LocalDate(targetMonth.Year, targetMonth.Month, lastDayOfMonth).At(NodaTime.LocalTime.MaxValue);
-
-        var periodStartInstant = periodStart.InZoneLeniently(timeZone).ToInstant();
-        var periodEndInstant = periodEnd.InZoneLeniently(timeZone).ToInstant();
+        var monthEnd = new NodaTime.LocalDate(targetMonth.Year, targetMonth.Month, lastDayOfMonth);
 
         var allEvents = await _listUpcomingItems.ExecuteAsync(cancellationToken);
-        var monthEvents = new List<Domain.Entities.Event>();
-
-        foreach (var eventEntity in allEvents)
-        {
-            NodaTime.Instant? eventInstant = null;
-
-            if (eventEntity.Kind == Domain.Enums.EventKind.OneOff && eventEntity.OccursAtUtc.HasValue)
-            {
-                eventInstant = NodaTime.Instant.FromDateTimeUtc(eventEntity.OccursAtUtc.Value.UtcDateTime);
-            }
-            else if (eventEntity.Kind == Domain.Enums.EventKind.Yearly && eventEntity.Month.HasValue && eventEntity.Day.HasValue)
-            {
-                var targetDate = new NodaTime.LocalDate(targetMonth.Year, eventEntity.Month.Value, eventEntity.Day.Value);
-                if (targetDate >= periodStart.Date && targetDate <= periodEnd.Date)
-                {
-                    var localDateTime = eventEntity.IsAllDay
-                        ? targetDate.AtMidnight()
-                        : targetDate.At(eventEntity.TimeOfDay.HasValue ? NodaTime.LocalTime.FromTicksSinceMidnight(eventEntity.TimeOfDay.Value.Ticks) : NodaTime.LocalTime.Midnight);
-                    eventInstant = localDateTime.InZoneLeniently(timeZone).ToInstant();
-                }
-            }
-
-            if (eventInstant.HasValue && eventInstant.Value >= periodStartInstant && eventInstant.Value <= periodEndInstant)
-            {
-                monthEvents.Add(eventEntity);
-            }
-        }
-
-        monthEvents = monthEvents.OrderBy(e =>
-        {
-            if (e.Kind == Domain.Enums.EventKind.OneOff && e.OccursAtUtc.HasValue)
-            {
-                return e.OccursAtUtc.Value.UtcDateTime;
-            }
-
-            var targetDate = new NodaTime.LocalDate(targetMonth.Year, e.Month!.Value, e.Day!.Value);
-            var localDateTime = e.IsAllDay
-                ? targetDate.AtMidnight()
-                : targetDate.At(e.TimeOfDay.HasValue ? NodaTime.LocalTime.FromTicksSinceMidnight(e.TimeOfDay.Value.Ticks) : NodaTime.LocalTime.Midnight);
-            var zonedDateTime = localDateTime.InZoneLeniently(timeZone);
-            var instant = zonedDateTime.ToInstant();
-            return instant.ToDateTimeUtc();
-        }).ToList();
+        var monthOccurrences = ExpandOccurrences(allEvents, monthStart, monthEnd, timeZone);
+        var monthEvents = DistinctEvents(monthOccurrences);
 
         var allBirthdays = await _listBirthdays.ExecuteAsync(cancellationToken);
         var monthBirthdays = allBirthdays
@@ -2165,7 +2104,7 @@ public sealed class CallbackHandlers
             if (monthEvents.Count > 0)
             {
                 textBuilder.AppendLine("📅 События:");
-                textBuilder.AppendLine(_eventFormatter.Format(monthEvents, eventAttachments));
+                textBuilder.AppendLine(_eventFormatter.FormatOccurrences(monthOccurrences, eventAttachments));
                 if (monthBirthdays.Count > 0)
                 {
                     textBuilder.AppendLine();
