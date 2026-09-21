@@ -674,87 +674,24 @@ public sealed class MessageHandlers
 
     private async Task SaveEventAsync(Message message, EventConversationData data, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(data.Title) || data.Month is null || data.Day is null || data.Kind is null)
+        var timeZone = DateTimeZoneProviders.Tzdb[_timeZoneProvider.GetTimeZoneId()];
+        var failure = EventCommandBuilder.TryBuild(data, timeZone, out var command);
+
+        if (failure != EventCommandBuildFailure.None)
         {
+            var errorText = failure == EventCommandBuildFailure.MissingYear
+                ? "Не удалось сохранить событие. Начните заново с /event_add"
+                : "Не удалось сохранить событие. Начните заново с /event_add";
+
             await _conversationRepository.DeleteAsync(message.From!.Id, cancellationToken);
             await _botClient.SendNoPreview(
                 message.Chat.Id,
-                "Не удалось сохранить событие. Начните заново с /event_add",
+                errorText,
                 cancellationToken: cancellationToken);
             return;
         }
 
-        var timeZone = DateTimeZoneProviders.Tzdb[_timeZoneProvider.GetTimeZoneId()];
-        var now = _clock.UtcNow;
-        var nowInZone = Instant.FromDateTimeUtc(now).InZone(timeZone);
-
-        CreateEventCommand command;
-
-        if (data.Kind == "OneOff")
-        {
-            if (data.Year is null || data.Month is null || data.Day is null)
-            {
-                await _conversationRepository.DeleteAsync(message.From!.Id, cancellationToken);
-                await _botClient.SendNoPreview(
-                    message.Chat.Id,
-                    "Не удалось сохранить событие. Начните заново с /event_add",
-                    cancellationToken: cancellationToken);
-                return;
-            }
-
-            var localDate = new LocalDate(data.Year.Value, data.Month.Value, data.Day.Value);
-            LocalDateTime localDateTime;
-
-            if (data.IsAllDay == true)
-            {
-                localDateTime = localDate.AtMidnight();
-            }
-            else
-            {
-                var time = data.Hour.HasValue && data.Minute.HasValue
-                    ? new LocalTime(data.Hour.Value, data.Minute.Value)
-                    : LocalTime.Midnight;
-                localDateTime = localDate.At(time);
-            }
-
-            var zonedDateTime = localDateTime.InZoneLeniently(timeZone);
-            var instant = zonedDateTime.ToInstant();
-            var occursAtUtc = instant.ToDateTimeOffset();
-
-            command = new CreateEventCommand
-            {
-                Title = data.Title,
-                Kind = EventKind.OneOff,
-                IsAllDay = data.IsAllDay == true,
-                OccursAtUtc = occursAtUtc,
-                Description = data.Description,
-                Place = data.Place,
-                Link = data.Link
-            };
-        }
-        else
-        {
-            TimeSpan? timeOfDay = null;
-            if (!data.IsAllDay!.Value && data.Hour.HasValue && data.Minute.HasValue)
-            {
-                timeOfDay = new TimeSpan(data.Hour.Value, data.Minute.Value, 0);
-            }
-
-            command = new CreateEventCommand
-            {
-                Title = data.Title,
-                Kind = EventKind.Yearly,
-                IsAllDay = data.IsAllDay == true,
-                Month = data.Month,
-                Day = data.Day,
-                TimeOfDay = timeOfDay,
-                Description = data.Description,
-                Place = data.Place,
-                Link = data.Link
-            };
-        }
-
-        await _createEvent.ExecuteAsync(command, cancellationToken);
+        await _createEvent.ExecuteAsync(command!, cancellationToken);
         await _conversationRepository.DeleteAsync(message.From!.Id, cancellationToken);
 
         await _botClient.SendNoPreview(
@@ -1403,86 +1340,24 @@ public sealed class MessageHandlers
 
     private async Task SaveEventFromDataAsync(Message message, EventConversationData data, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(data.Title) || data.Month is null || data.Day is null || data.Kind is null)
+        var timeZone = DateTimeZoneProviders.Tzdb[_timeZoneProvider.GetTimeZoneId()];
+        var failure = EventCommandBuilder.TryBuild(data, timeZone, out var command);
+
+        if (failure != EventCommandBuildFailure.None)
         {
+            var errorText = failure == EventCommandBuildFailure.MissingYear
+                ? "Для разового события требуется указать год"
+                : "Не удалось сохранить событие. Проверьте формат";
+
             await _conversationRepository.DeleteAsync(message.From!.Id, cancellationToken);
             await _botClient.SendNoPreview(
                 message.Chat.Id,
-                "Не удалось сохранить событие. Проверьте формат",
+                errorText,
                 cancellationToken: cancellationToken);
             return;
         }
 
-        var timeZone = DateTimeZoneProviders.Tzdb[_timeZoneProvider.GetTimeZoneId()];
-        var now = _clock.UtcNow;
-
-        CreateEventCommand command;
-
-        if (data.Kind == "OneOff")
-        {
-            if (data.Year is null || data.Month is null || data.Day is null)
-            {
-                await _conversationRepository.DeleteAsync(message.From!.Id, cancellationToken);
-                await _botClient.SendNoPreview(
-                    message.Chat.Id,
-                    "Для разового события требуется указать год",
-                    cancellationToken: cancellationToken);
-                return;
-            }
-
-            var localDate = new LocalDate(data.Year.Value, data.Month.Value, data.Day.Value);
-            LocalDateTime localDateTime;
-
-            if (data.IsAllDay == true)
-            {
-                localDateTime = localDate.AtMidnight();
-            }
-            else
-            {
-                var time = data.Hour.HasValue && data.Minute.HasValue
-                    ? new LocalTime(data.Hour.Value, data.Minute.Value)
-                    : LocalTime.Midnight;
-                localDateTime = localDate.At(time);
-            }
-
-            var zonedDateTime = localDateTime.InZoneLeniently(timeZone);
-            var instant = zonedDateTime.ToInstant();
-            var occursAtUtc = instant.ToDateTimeOffset();
-
-            command = new CreateEventCommand
-            {
-                Title = data.Title,
-                Kind = EventKind.OneOff,
-                IsAllDay = data.IsAllDay == true,
-                OccursAtUtc = occursAtUtc,
-                Description = data.Description,
-                Place = data.Place,
-                Link = data.Link
-            };
-        }
-        else
-        {
-            TimeSpan? timeOfDay = null;
-            if (!data.IsAllDay!.Value && data.Hour.HasValue && data.Minute.HasValue)
-            {
-                timeOfDay = new TimeSpan(data.Hour.Value, data.Minute.Value, 0);
-            }
-
-            command = new CreateEventCommand
-            {
-                Title = data.Title,
-                Kind = EventKind.Yearly,
-                IsAllDay = data.IsAllDay == true,
-                Month = data.Month,
-                Day = data.Day,
-                TimeOfDay = timeOfDay,
-                Description = data.Description,
-                Place = data.Place,
-                Link = data.Link
-            };
-        }
-
-        await _createEvent.ExecuteAsync(command, cancellationToken);
+        await _createEvent.ExecuteAsync(command!, cancellationToken);
         await _conversationRepository.DeleteAsync(message.From!.Id, cancellationToken);
 
         await _botClient.SendNoPreview(
