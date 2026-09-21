@@ -32,42 +32,15 @@ public sealed class CreateEvent
     public async Task ExecuteAsync(CreateEventCommand command, CancellationToken cancellationToken)
     {
         var now = _clock.UtcNow;
-        Event eventEntity;
 
-        if (command.Kind == EventKind.OneOff)
+        var eventEntity = command.Kind switch
         {
-            if (!command.OccursAtUtc.HasValue)
-            {
-                throw new InvalidOperationException("OccursAtUtc is required for OneOff events.");
-            }
-
-            eventEntity = Event.CreateOneOff(
-                command.Title,
-                command.OccursAtUtc.Value,
-                command.IsAllDay,
-                command.Description,
-                command.Place,
-                command.Link,
-                now);
-        }
-        else
-        {
-            if (!command.Month.HasValue || !command.Day.HasValue)
-            {
-                throw new InvalidOperationException("Month and Day are required for Yearly events.");
-            }
-
-            eventEntity = Event.CreateYearly(
-                command.Title,
-                command.Month.Value,
-                command.Day.Value,
-                command.TimeOfDay,
-                command.IsAllDay,
-                command.Description,
-                command.Place,
-                command.Link,
-                now);
-        }
+            EventKind.OneOff => CreateOneOff(command, now),
+            EventKind.Yearly => CreateYearly(command, now),
+            EventKind.Weekly => CreateWeekly(command, now),
+            EventKind.Interval => CreateInterval(command, now),
+            _ => throw new InvalidOperationException($"Unsupported event kind: {command.Kind}.")
+        };
 
         await _eventRepository.AddAsync(eventEntity, cancellationToken);
 
@@ -80,6 +53,93 @@ public sealed class CreateEvent
             _logger.LogError(ex, "Failed to refresh latest digest posts after creating event {Title}", eventEntity.Title);
         }
     }
+
+    private static Event CreateOneOff(CreateEventCommand command, DateTime now)
+    {
+        if (!command.OccursAtUtc.HasValue)
+        {
+            throw new InvalidOperationException("OccursAtUtc is required for OneOff events.");
+        }
+
+        return Event.CreateOneOff(
+            command.Title,
+            command.OccursAtUtc.Value,
+            command.IsAllDay,
+            command.Description,
+            command.Place,
+            command.Link,
+            now);
+    }
+
+    private static Event CreateYearly(CreateEventCommand command, DateTime now)
+    {
+        if (!command.Month.HasValue || !command.Day.HasValue)
+        {
+            throw new InvalidOperationException("Month and Day are required for Yearly events.");
+        }
+
+        return Event.CreateYearly(
+            command.Title,
+            command.Month.Value,
+            command.Day.Value,
+            command.TimeOfDay,
+            command.IsAllDay,
+            command.Description,
+            command.Place,
+            command.Link,
+            now);
+    }
+
+    private static Event CreateWeekly(CreateEventCommand command, DateTime now)
+    {
+        if (!command.DaysOfWeekMask.HasValue)
+        {
+            throw new InvalidOperationException("DaysOfWeekMask is required for Weekly events.");
+        }
+
+        if (!command.StartDateLocal.HasValue)
+        {
+            throw new InvalidOperationException("StartDateLocal is required for Weekly events.");
+        }
+
+        return Event.CreateWeekly(
+            command.Title,
+            command.DaysOfWeekMask.Value,
+            command.StartDateLocal.Value,
+            command.TimeOfDay,
+            command.IsAllDay,
+            command.RepeatUntilLocal,
+            command.Description,
+            command.Place,
+            command.Link,
+            now);
+    }
+
+    private static Event CreateInterval(CreateEventCommand command, DateTime now)
+    {
+        if (!command.IntervalCount.HasValue || !command.IntervalUnit.HasValue)
+        {
+            throw new InvalidOperationException("IntervalCount and IntervalUnit are required for Interval events.");
+        }
+
+        if (!command.StartDateLocal.HasValue)
+        {
+            throw new InvalidOperationException("StartDateLocal is required for Interval events.");
+        }
+
+        return Event.CreateInterval(
+            command.Title,
+            command.IntervalCount.Value,
+            command.IntervalUnit.Value,
+            command.StartDateLocal.Value,
+            command.TimeOfDay,
+            command.IsAllDay,
+            command.RepeatUntilLocal,
+            command.Description,
+            command.Place,
+            command.Link,
+            now);
+    }
 }
 
 public sealed record CreateEventCommand
@@ -91,6 +151,11 @@ public sealed record CreateEventCommand
     public int? Month { get; init; }
     public int? Day { get; init; }
     public TimeSpan? TimeOfDay { get; init; }
+    public int? DaysOfWeekMask { get; init; }
+    public int? IntervalCount { get; init; }
+    public RecurrenceUnit? IntervalUnit { get; init; }
+    public DateOnly? StartDateLocal { get; init; }
+    public DateOnly? RepeatUntilLocal { get; init; }
     public string? Description { get; init; }
     public string? Place { get; init; }
     public string? Link { get; init; }
