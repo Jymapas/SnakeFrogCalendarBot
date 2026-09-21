@@ -568,6 +568,36 @@ public sealed class CallbackHandlers
 
             builder.AppendLine(" (ежегодно)");
         }
+        else if (eventEntity.IsRecurringSchedule)
+        {
+            builder.Append("🔁 Повторение: ");
+            builder.AppendLine(RecurrenceDescriber.Describe(eventEntity) ?? "—");
+
+            if (eventEntity.TimeOfDay.HasValue && !eventEntity.IsAllDay)
+            {
+                var time = NodaTime.LocalTime.FromTicksSinceMidnight(eventEntity.TimeOfDay.Value.Ticks);
+                builder.AppendLine($"🕒 Время: {time.ToString("HH:mm", CultureInfo.InvariantCulture)}");
+            }
+
+            if (eventEntity.StartDateLocal.HasValue)
+            {
+                var startDate = eventEntity.StartDateLocal.Value;
+                var start = new NodaTime.LocalDate(startDate.Year, startDate.Month, startDate.Day);
+                builder.AppendLine($"📆 Начало: {start.ToString("d MMMM yyyy", culture)}");
+            }
+
+            var boundary = RecurrenceDescriber.FormatBoundaryDate(eventEntity);
+            builder.AppendLine($"📆 Окончание: {boundary ?? "бессрочно"}");
+
+            var next = EventNextOccurrenceCalculator.TryGetNextLocalOccurrence(eventEntity, today, timeZone);
+            if (next.HasValue)
+            {
+                builder.Append($"➡️ Ближайшее: {next.Value.Date.ToString("d MMMM yyyy", culture)}");
+                builder.AppendLine(next.Value.Time.HasValue
+                    ? $" {next.Value.Time.Value.ToString("HH:mm", CultureInfo.InvariantCulture)}"
+                    : string.Empty);
+            }
+        }
 
         if (!string.IsNullOrWhiteSpace(eventEntity.Description))
         {

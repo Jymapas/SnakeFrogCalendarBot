@@ -34,14 +34,22 @@ public static class RecurrenceDescriber
     /// </summary>
     public static string? DescribeBoundary(Event eventEntity)
     {
+        var date = FormatBoundaryDate(eventEntity);
+        return date is null ? null : $"до {date}";
+    }
+
+    /// <summary>
+    /// Дата окончания повторения без предлога, либо null для бессрочного повторения.
+    /// </summary>
+    public static string? FormatBoundaryDate(Event eventEntity)
+    {
         if (!eventEntity.RepeatUntilLocal.HasValue)
         {
             return null;
         }
 
         var value = eventEntity.RepeatUntilLocal.Value;
-        var date = new LocalDate(value.Year, value.Month, value.Day);
-        return $"до {date.ToString("d MMMM yyyy", Culture)}";
+        return new LocalDate(value.Year, value.Month, value.Day).ToString("d MMMM yyyy", Culture);
     }
 
     /// <summary>
